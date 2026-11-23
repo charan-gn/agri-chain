@@ -142,7 +142,4 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 # Android skeleton (T1). JDK 17 + SDK 36 required.
 cd android && ./gradlew installDebug
 # Default ledger URL for emulator: http://10.0.2.2:8000; use the laptop LAN IP on phones.
-
-# T1 smoke check
-curl -s localhost:8000/health
 ```
