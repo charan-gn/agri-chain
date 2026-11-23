@@ -12,7 +12,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | ID | Task | Status | Claimed by | Branch | Touches (files/folders) | Depends on |
 |----|------|--------|------------|--------|-------------------------|------------|
 | T1 | Repo skeleton + contracts | done | charan | task-T1-charan | README.md, android/ | — |
-| T2 | QR batch register, generate and scan | open | — | — | APP/qr/, APP/batch/ | T1 |
+| T2 | QR batch register, generate and scan | claimed | charan | task-T2-charan | APP/qr/, APP/batch/, APP/core/, android/app/build.gradle.kts, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{register_batch,batch_qr,scan}.xml | T1 |
 | T3 | Minimal UI shell (farmer / buyer) | open | — | — | APP/ui/, APP/MainActivity.kt, android/app/src/main/res/layout/ | T1 |
 | T4 | Ledger node: hash-chained log + REST API | open | — | — | ledger/ | T1 |
 | T5 | Token mint/transfer + price from trades | open | — | — | ledger/tokens.py | T4 |
