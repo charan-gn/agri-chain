@@ -15,7 +15,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T2 | QR batch register, generate and scan | done | charan | task-T2-charan | APP/qr/, APP/batch/, APP/core/, android/app/src/test/, android/app/build.gradle.kts, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{register_batch,batch_qr,scan}.xml | T1 |
 | T3 | Minimal UI shell (farmer / buyer) | done | charan | task-T3-charan | APP/ui/, APP/MainActivity.kt, android/app/src/main/res/layout/, android/app/src/main/AndroidManifest.xml | T1 |
 | T4 | Ledger node: hash-chained log + REST API | done | charan | task-T4-charan | ledger/ | T1 |
-| T5 | Token mint/transfer + price from trades | open | — | — | ledger/tokens.py | T4 |
+| T5 | Token mint/transfer + price from trades | claimed | charan | task-T5-charan | ledger/tokens.py, ledger/app.py, ledger/db.py, ledger/tests/, README.md | T4 |
 | T6 | Box app: GPS logging + event signing | claimed | Laasya | task-T6-laasya | APP/box/, APP/crypto/ | T1, T4 |
 | T7 | Box app: tamper triggers | open | — | — | APP/box/ | T6 |
 | T8 | Buyer history view (route, tamper flags) | open | — | — | APP/buyer/ | T2, T3, T4 |
@@ -84,6 +84,7 @@ Chain rule: one linear chain per `batchId`; genesis `prevHash=""`. The server ap
 | `GET /batches/{batchId}/verify` | — | `{"valid":bool,"events":int,"head":str,"brokenAt"?:eventId,"reason"?}` |
 | `GET /prices?crop=<crop>&market=<market>` | market optional | `{"updatedAt":ms,"prices":[{"crop","market","pricePerKgPaise","source","ts"}]}` |
 | `POST /prices/refresh` | `{"crop"?,"market"?}` | same shape as `GET /prices` |
+| `GET /trades?crop=<crop>` | crop required | `{"crop","updatedAt":ms,"pricePerKgPaise":int\|null,"trades":[{"batchId","eventId","ts","tokens","pricePerKgPaise","fromActorId","toActorId"}]}` |
 
 BatchSummary:
 
@@ -93,7 +94,7 @@ BatchSummary:
  "tamperCount":0,"lastHash":"<hex>","verified":true,"events":[]}
 ```
 
-`ownerId` = holder of the largest balance (ties: most recent transfer). Transfer and barter detail endpoints are T10's to publish before anyone depends on them.
+`ownerId` = holder of the largest balance (ties: most recent transfer). A TRANSFER may not exceed the sender's balance; the ledger rejects it with `409 insufficient_balance`. Trade price is the token-weighted average of TRANSFER events that carry `pricePerKgPaise` for that crop (`null` with no trades). Barter detail endpoints are T10's to publish before anyone depends on them.
 
 ### Mesh and QR
 
