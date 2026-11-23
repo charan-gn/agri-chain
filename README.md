@@ -14,7 +14,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T1 | Repo skeleton + contracts | done | charan | task-T1-charan | README.md, android/ | — |
 | T2 | QR batch register, generate and scan | done | charan | task-T2-charan | APP/qr/, APP/batch/, APP/core/, android/app/src/test/, android/app/build.gradle.kts, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{register_batch,batch_qr,scan}.xml | T1 |
 | T3 | Minimal UI shell (farmer / buyer) | done | charan | task-T3-charan | APP/ui/, APP/MainActivity.kt, android/app/src/main/res/layout/, android/app/src/main/AndroidManifest.xml | T1 |
-| T4 | Ledger node: hash-chained log + REST API | open | — | — | ledger/ | T1 |
+| T4 | Ledger node: hash-chained log + REST API | claimed | charan | task-T4-charan | ledger/ | T1 |
 | T5 | Token mint/transfer + price from trades | open | — | — | ledger/tokens.py | T4 |
 | T6 | Box app: GPS logging + event signing | open | — | — | APP/box/, APP/crypto/ | T1, T4 |
 | T7 | Box app: tamper triggers | open | — | — | APP/box/ | T6 |
