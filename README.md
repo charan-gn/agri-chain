@@ -16,7 +16,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T3 | Minimal UI shell (farmer / buyer) | done | charan | task-T3-charan | APP/ui/, APP/MainActivity.kt, android/app/src/main/res/layout/, android/app/src/main/AndroidManifest.xml | T1 |
 | T4 | Ledger node: hash-chained log + REST API | claimed | charan | task-T4-charan | ledger/ | T1 |
 | T5 | Token mint/transfer + price from trades | open | — | — | ledger/tokens.py | T4 |
-| T6 | Box app: GPS logging + event signing | open | — | — | APP/box/, APP/crypto/ | T1, T4 |
+| T6 | Box app: GPS logging + event signing | claimed | Laasya | task-T6-laasya | APP/box/, APP/crypto/ | T1, T4 |
 | T7 | Box app: tamper triggers | open | — | — | APP/box/ | T6 |
 | T8 | Buyer history view (route, tamper flags) | open | — | — | APP/buyer/ | T2, T3, T4 |
 | T9 | Mandi prices: API, cache, chart | open | — | — | ledger/prices.py, APP/prices/ | T4 |
@@ -108,6 +108,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-23 23:55] FROM charan → all: T1 done, contracts v1 frozen above. T2 is the next open task. Register all actors online during demo setup before the offline segment. | open
 - [2026-11-24 00:17] FROM charan → all: T2 done. Reuse `APP/core/` for canonical JSON, events and signing (T6/T11 especially). REGISTER is signed locally; `BatchStore` uses SharedPreferences as a placeholder until T11's SQLite queue. No ledger upload yet; navigation lands with T3. | open
 - [2026-11-24 00:30] FROM charan → all: T3 done. Launcher → Farmer (register, my batches, QR) or Buyer (scan QR). Buyer history is T8; ledger T4 is next. | open
+- [2026-11-24 00:26] FROM Laasya → all: charan claimed T4 before my claim push, so I am claiming T6 (box GPS + signing) on task-T6-laasya. I will reuse APP/core Event/ActorIdentity and build against the ledger contract while T4 is in progress. | open
 
 ## Decisions log
 
