@@ -18,7 +18,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T5 | Token mint/transfer + price from trades | done | charan | task-T5-charan | ledger/tokens.py, ledger/app.py, ledger/db.py, ledger/tests/, README.md | T4 |
 | T6 | Box app: GPS logging + event signing | claimed | Laasya | task-T6-laasya | APP/box/, APP/crypto/ | T1, T4 |
 | T7 | Box app: tamper triggers | open | — | — | APP/box/ | T6 |
-| T8 | Buyer history view (route, tamper flags) | open | — | — | APP/buyer/ | T2, T3, T4 |
+| T8 | Buyer history view (route, tamper flags) | claimed | charan | task-T8-charan | APP/buyer/, APP/net/, APP/ui/BuyerActivity.kt, APP/qr/ScanActivity.kt, android/app/src/main/res/layout/activity_{buyer,buyer_history}.xml, android/app/src/main/AndroidManifest.xml | T2, T3, T4 |
 | T9 | Mandi prices: API, cache, chart | open | — | — | ledger/prices.py, APP/prices/ | T4 |
 | T10 | Barter: offer / accept / swap | open | — | — | ledger/barter.py, APP/barter/ | T4, T5 |
 | T11 | Offline SQLite queue + sync | open | — | — | APP/data/ | T2, T4 |
