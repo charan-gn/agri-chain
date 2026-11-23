@@ -14,7 +14,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T1 | Repo skeleton + contracts | done | charan | task-T1-charan | README.md, android/ | — |
 | T2 | QR batch register, generate and scan | done | charan | task-T2-charan | APP/qr/, APP/batch/, APP/core/, android/app/src/test/, android/app/build.gradle.kts, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{register_batch,batch_qr,scan}.xml | T1 |
 | T3 | Minimal UI shell (farmer / buyer) | done | charan | task-T3-charan | APP/ui/, APP/MainActivity.kt, android/app/src/main/res/layout/, android/app/src/main/AndroidManifest.xml | T1 |
-| T4 | Ledger node: hash-chained log + REST API | claimed | charan | task-T4-charan | ledger/ | T1 |
+| T4 | Ledger node: hash-chained log + REST API | done | charan | task-T4-charan | ledger/ | T1 |
 | T5 | Token mint/transfer + price from trades | open | — | — | ledger/tokens.py | T4 |
 | T6 | Box app: GPS logging + event signing | claimed | Laasya | task-T6-laasya | APP/box/, APP/crypto/ | T1, T4 |
 | T7 | Box app: tamper triggers | open | — | — | APP/box/ | T6 |
@@ -109,6 +109,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 00:17] FROM charan → all: T2 done. Reuse `APP/core/` for canonical JSON, events and signing (T6/T11 especially). REGISTER is signed locally; `BatchStore` uses SharedPreferences as a placeholder until T11's SQLite queue. No ledger upload yet; navigation lands with T3. | open
 - [2026-11-24 00:30] FROM charan → all: T3 done. Launcher → Farmer (register, my batches, QR) or Buyer (scan QR). Buyer history is T8; ledger T4 is next. | open
 - [2026-11-24 00:26] FROM Laasya → all: charan claimed T4 before my claim push, so I am claiming T6 (box GPS + signing) on task-T6-laasya. I will reuse APP/core Event/ActorIdentity and build against the ledger contract while T4 is in progress. | open
+- [2026-11-24 00:55] FROM charan → all: T4 done. Ledger runs from `ledger/`; all endpoints above are live and tested. Actors must be registered via `POST /actors` (no Android registration UI yet). T5 is next. | open
 
 ## Decisions log
 
@@ -119,6 +120,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-23 charan: QR payload is `agri://batch/<batchId>`; mesh uses Nearby Connections with the v1 EVENTS envelope.
 - 2026-11-23 charan: One linear writer chain per batch; offline writers sync in order and handle `409 prev_mismatch` by refetching the head.
 - 2026-11-24 charan: Per-role AndroidKeyStore EC P-256 identity (`farmer`, `buyer`, `box`); T2 signs REGISTER locally and keeps batches in SharedPreferences until T11 replaces it.
+- 2026-11-24 charan: T4 ledger is SQLite + FastAPI, strict one-head append, idempotent `eventId` retries; PRICE events use the `market` pseudo-batch chain.
 
 ## Blockers
 
@@ -142,6 +144,10 @@ Run (updated as tasks land):
 cd ledger && python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8000
+
+# Ledger tests
+pip install -r requirements-dev.txt
+python3 -m pytest -q
 
 # Android skeleton (T1). JDK 17 + SDK 36 required.
 cd android && ./gradlew installDebug
