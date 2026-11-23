@@ -12,7 +12,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | ID | Task | Status | Claimed by | Branch | Touches (files/folders) | Depends on |
 |----|------|--------|------------|--------|-------------------------|------------|
 | T1 | Repo skeleton + contracts | done | charan | task-T1-charan | README.md, android/ | — |
-| T2 | QR batch register, generate and scan | claimed | charan | task-T2-charan | APP/qr/, APP/batch/, APP/core/, android/app/build.gradle.kts, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{register_batch,batch_qr,scan}.xml | T1 |
+| T2 | QR batch register, generate and scan | done | charan | task-T2-charan | APP/qr/, APP/batch/, APP/core/, android/app/src/test/, android/app/build.gradle.kts, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{register_batch,batch_qr,scan}.xml | T1 |
 | T3 | Minimal UI shell (farmer / buyer) | open | — | — | APP/ui/, APP/MainActivity.kt, android/app/src/main/res/layout/ | T1 |
 | T4 | Ledger node: hash-chained log + REST API | open | — | — | ledger/ | T1 |
 | T5 | Token mint/transfer + price from trades | open | — | — | ledger/tokens.py | T4 |
@@ -106,6 +106,7 @@ QR payload: `agri://batch/<batchId>`. Buyer scans → `GET /batches/{batchId}`.
 Append only. `[date time] FROM name → TO name/all: message | open / done`
 
 - [2026-11-23 23:55] FROM charan → all: T1 done, contracts v1 frozen above. T2 is the next open task. Register all actors online during demo setup before the offline segment. | open
+- [2026-11-24 00:17] FROM charan → all: T2 done. Reuse `APP/core/` for canonical JSON, events and signing (T6/T11 especially). REGISTER is signed locally; `BatchStore` uses SharedPreferences as a placeholder until T11's SQLite queue. No ledger upload yet; navigation lands with T3. | open
 
 ## Decisions log
 
@@ -115,6 +116,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-23 charan: 1 token = 1 kg; grade is metadata in v1; lat/lon are fixed 6-decimal strings and `data` holds integers only (prices in paise).
 - 2026-11-23 charan: QR payload is `agri://batch/<batchId>`; mesh uses Nearby Connections with the v1 EVENTS envelope.
 - 2026-11-23 charan: One linear writer chain per batch; offline writers sync in order and handle `409 prev_mismatch` by refetching the head.
+- 2026-11-24 charan: Per-role AndroidKeyStore EC P-256 identity (`farmer`, `buyer`, `box`); T2 signs REGISTER locally and keeps batches in SharedPreferences until T11 replaces it.
 
 ## Blockers
 
@@ -142,4 +144,7 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 # Android skeleton (T1). JDK 17 + SDK 36 required.
 cd android && ./gradlew installDebug
 # Default ledger URL for emulator: http://10.0.2.2:8000; use the laptop LAN IP on phones.
+
+# T2 unit tests (canonical event hash + QR codec)
+cd android && ./gradlew testDebugUnitTest
 ```
