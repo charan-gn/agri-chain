@@ -13,7 +13,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 |----|------|--------|------------|--------|-------------------------|------------|
 | T1 | Repo skeleton + contracts | done | charan | task-T1-charan | README.md, android/ | — |
 | T2 | QR batch register, generate and scan | done | charan | task-T2-charan | APP/qr/, APP/batch/, APP/core/, android/app/src/test/, android/app/build.gradle.kts, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{register_batch,batch_qr,scan}.xml | T1 |
-| T3 | Minimal UI shell (farmer / buyer) | claimed | charan | task-T3-charan | APP/ui/, APP/MainActivity.kt, android/app/src/main/res/layout/, android/app/src/main/AndroidManifest.xml | T1 |
+| T3 | Minimal UI shell (farmer / buyer) | done | charan | task-T3-charan | APP/ui/, APP/MainActivity.kt, android/app/src/main/res/layout/, android/app/src/main/AndroidManifest.xml | T1 |
 | T4 | Ledger node: hash-chained log + REST API | open | — | — | ledger/ | T1 |
 | T5 | Token mint/transfer + price from trades | open | — | — | ledger/tokens.py | T4 |
 | T6 | Box app: GPS logging + event signing | open | — | — | APP/box/, APP/crypto/ | T1, T4 |
@@ -107,6 +107,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 
 - [2026-11-23 23:55] FROM charan → all: T1 done, contracts v1 frozen above. T2 is the next open task. Register all actors online during demo setup before the offline segment. | open
 - [2026-11-24 00:17] FROM charan → all: T2 done. Reuse `APP/core/` for canonical JSON, events and signing (T6/T11 especially). REGISTER is signed locally; `BatchStore` uses SharedPreferences as a placeholder until T11's SQLite queue. No ledger upload yet; navigation lands with T3. | open
+- [2026-11-24 00:30] FROM charan → all: T3 done. Launcher → Farmer (register, my batches, QR) or Buyer (scan QR). Buyer history is T8; ledger T4 is next. | open
 
 ## Decisions log
 
