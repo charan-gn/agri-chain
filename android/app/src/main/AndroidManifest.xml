@@ -24,6 +24,16 @@
         </activity>
 
         <activity
+            android:name=".ui.FarmerActivity"
+            android:exported="false"
+            android:label="Farmer" />
+
+        <activity
+            android:name=".ui.BuyerActivity"
+            android:exported="false"
+            android:label="Buyer" />
+
+        <activity
             android:name=".batch.RegisterBatchActivity"
             android:exported="false"
             android:label="Register batch" />
