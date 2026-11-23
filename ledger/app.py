@@ -19,6 +19,13 @@ from crypto import (
     verify_signature,
 )
 from db import BatchNotFound, EventConflict, LedgerDb, PrevMismatch
+from tokens import (
+    InsufficientBalance,
+    assert_transfer_allowed,
+    compute_balances,
+    trades_for_crop,
+    weighted_price,
+)
 from validation import ValidationError, validate_actor_registration, validate_event
 
 DEFAULT_DB = Path(__file__).resolve().parent / "ledger.db"
@@ -63,6 +70,22 @@ def append_one(db: LedgerDb, raw: Any) -> dict:
 
     if not verify_signature(actor["pub_key"], event["sig"], canonical.encode("utf-8")):
         raise ApiError(400, "bad_signature", "signature does not verify for the actor")
+
+    history = [event_out(row) for row in db.events_for_batch(event["batchId"])]
+    already_stored = any(
+        item["eventId"] == event["eventId"] and item["hash"] == event["hash"]
+        for item in history
+    )
+    if not already_stored:
+        try:
+            assert_transfer_allowed(history, event)
+        except InsufficientBalance as exc:
+            raise ApiError(
+                409,
+                "insufficient_balance",
+                "transfer exceeds the sender's balance",
+                balance=exc.available,
+            )
 
     data_json = json.dumps(
         event["data"],
@@ -125,23 +148,18 @@ def verify_events(db: LedgerDb, rows: list[dict]) -> dict:
 
 
 def build_summary(db: LedgerDb, rows: list[dict], include_events: bool) -> dict:
-    register = event_out(rows[0])
+    events = [event_out(row) for row in rows]
+    register = events[0]
     if register["type"] != "REGISTER":
         raise ApiError(404, "not_found", "batch not found")
     register_data = register["data"]
 
-    balances = {register["actorId"]: int(register_data["weightKg"])}
+    balances = compute_balances(events)
     last_seq = {register["actorId"]: rows[0]["seq"]}
-    for row in rows[1:]:
-        event = event_out(row)
+    for row, event in zip(rows[1:], events[1:]):
         if event["type"] == "TRANSFER":
-            tokens = int(event["data"]["tokens"])
-            source = event["actorId"]
-            target = event["data"]["toActorId"]
-            balances[source] = balances.get(source, 0) - tokens
-            balances[target] = balances.get(target, 0) + tokens
-            last_seq[source] = row["seq"]
-            last_seq[target] = row["seq"]
+            last_seq[event["actorId"]] = row["seq"]
+            last_seq[event["data"]["toActorId"]] = row["seq"]
 
     owner = max(balances, key=lambda actor: (balances[actor], last_seq.get(actor, 0)))
     summary = {
@@ -156,7 +174,7 @@ def build_summary(db: LedgerDb, rows: list[dict], include_events: bool) -> dict:
         "verified": verify_events(db, rows)["valid"],
     }
     if include_events:
-        summary["events"] = [event_out(row) for row in rows]
+        summary["events"] = events
     return summary
 
 
@@ -268,6 +286,20 @@ def create_app(db_path: str | None = None) -> FastAPI:
             "batchId": batchId,
             "head": rows[-1]["hash"],
             "events": [event_out(row) for row in rows],
+        }
+
+    @app.get("/trades")
+    def list_trades(crop: str = Query(...)) -> dict:
+        batches = [
+            [event_out(row) for row in db.events_for_batch(batch_id)]
+            for batch_id in db.register_batches()
+        ]
+        trades = trades_for_crop(batches, crop)
+        return {
+            "crop": crop,
+            "updatedAt": int(time.time() * 1000),
+            "pricePerKgPaise": weighted_price(trades),
+            "trades": trades,
         }
 
     @app.get("/batches/{batch_id}/verify")

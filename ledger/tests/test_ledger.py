@@ -360,3 +360,155 @@ def test_gps_requires_coordinates(client, farmer):
     response = client.post("/events", json=gps_without_coordinates)
     assert response.status_code == 400
     assert response.json()["error"] == "bad_event"
+
+
+def test_transfer_cannot_exceed_balance(client, farmer):
+    actor_id, key = farmer
+    batch_id = str(uuid.uuid4())
+    register = make_event(
+        actor_id,
+        key,
+        batch_id,
+        "REGISTER",
+        {"crop": "wheat", "grade": "A", "weightKg": 10},
+    )
+    assert client.post("/events", json=register).status_code == 201
+
+    transfer = make_event(
+        actor_id,
+        key,
+        batch_id,
+        "TRANSFER",
+        {"toActorId": f"buyer:{uuid.uuid4()}", "tokens": 11},
+        prev_hash=register["hash"],
+    )
+    response = client.post("/events", json=transfer)
+    assert response.status_code == 409
+    assert response.json()["error"] == "insufficient_balance"
+    assert response.json()["balance"] == 10
+    assert len(client.get(f"/events?batchId={batch_id}").json()["events"]) == 1
+
+
+def test_buyer_can_resell_received_tokens(client, farmer):
+    farmer_id, farmer_key = farmer
+    buyer_id, buyer_key = make_actor(client, "buyer")
+    final_buyer_id, _ = make_actor(client, "buyer")
+    batch_id = str(uuid.uuid4())
+
+    register = make_event(
+        farmer_id,
+        farmer_key,
+        batch_id,
+        "REGISTER",
+        {"crop": "wheat", "grade": "A", "weightKg": 100},
+    )
+    assert client.post("/events", json=register).status_code == 201
+
+    farmer_transfer = make_event(
+        farmer_id,
+        farmer_key,
+        batch_id,
+        "TRANSFER",
+        {"toActorId": buyer_id, "tokens": 40, "pricePerKgPaise": 2000},
+        prev_hash=register["hash"],
+    )
+    assert client.post("/events", json=farmer_transfer).status_code == 201
+
+    buyer_transfer = make_event(
+        buyer_id,
+        buyer_key,
+        batch_id,
+        "TRANSFER",
+        {"toActorId": final_buyer_id, "tokens": 15, "pricePerKgPaise": 3000},
+        prev_hash=farmer_transfer["hash"],
+    )
+    assert client.post("/events", json=buyer_transfer).status_code == 201
+
+    summary = client.get(f"/batches/{batch_id}").json()
+    assert summary["balances"] == {
+        farmer_id: 60,
+        buyer_id: 25,
+        final_buyer_id: 15,
+    }
+    assert summary["verified"] is True
+
+
+def test_trade_price_is_token_weighted(client, farmer):
+    actor_id, key = farmer
+    buyer_id, _ = make_actor(client, "buyer")
+
+    wheat_batch = str(uuid.uuid4())
+    wheat_register = make_event(
+        actor_id,
+        key,
+        wheat_batch,
+        "REGISTER",
+        {"crop": "wheat", "grade": "A", "weightKg": 100},
+    )
+    assert client.post("/events", json=wheat_register).status_code == 201
+
+    first = make_event(
+        actor_id,
+        key,
+        wheat_batch,
+        "TRANSFER",
+        {"toActorId": buyer_id, "tokens": 10, "pricePerKgPaise": 2000},
+        prev_hash=wheat_register["hash"],
+        ts=1764000001000,
+    )
+    assert client.post("/events", json=first).status_code == 201
+
+    second = make_event(
+        actor_id,
+        key,
+        wheat_batch,
+        "TRANSFER",
+        {"toActorId": buyer_id, "tokens": 20, "pricePerKgPaise": 3000},
+        prev_hash=first["hash"],
+        ts=1764000002000,
+    )
+    assert client.post("/events", json=second).status_code == 201
+
+    no_price = make_event(
+        actor_id,
+        key,
+        wheat_batch,
+        "TRANSFER",
+        {"toActorId": buyer_id, "tokens": 5},
+        prev_hash=second["hash"],
+        ts=1764000003000,
+    )
+    assert client.post("/events", json=no_price).status_code == 201
+
+    rice_batch = str(uuid.uuid4())
+    rice_register = make_event(
+        actor_id,
+        key,
+        rice_batch,
+        "REGISTER",
+        {"crop": "rice", "grade": "A", "weightKg": 50},
+    )
+    assert client.post("/events", json=rice_register).status_code == 201
+    rice_transfer = make_event(
+        actor_id,
+        key,
+        rice_batch,
+        "TRANSFER",
+        {"toActorId": buyer_id, "tokens": 10, "pricePerKgPaise": 9999},
+        prev_hash=rice_register["hash"],
+    )
+    assert client.post("/events", json=rice_transfer).status_code == 201
+
+    trades = client.get("/trades?crop=wheat").json()
+    assert trades["crop"] == "wheat"
+    assert trades["pricePerKgPaise"] == 2667
+    assert [trade["eventId"] for trade in trades["trades"]] == [
+        first["eventId"],
+        second["eventId"],
+    ]
+    assert trades["trades"][0]["fromActorId"] == actor_id
+    assert trades["trades"][0]["toActorId"] == buyer_id
+
+    empty = client.get("/trades?crop=maize").json()
+    assert empty["pricePerKgPaise"] is None
+    assert empty["trades"] == []
