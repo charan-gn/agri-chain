@@ -19,14 +19,16 @@ from crypto import (
     verify_signature,
 )
 from db import BatchNotFound, EventConflict, LedgerDb, PrevMismatch
-from prices import router as prices_router
-from tokens import (
-    InsufficientBalance,
-    assert_transfer_allowed,
-    compute_balances,
-    trades_for_crop,
-    weighted_price,
+from barter import (
+    BarterError,
+    apply_deltas,
+    barter_deltas,
+    derive_offers,
+    offer_public,
+    validate_barter_event,
 )
+from prices import router as prices_router
+from tokens import compute_balances, trades_for_crop, weighted_price
 from validation import ValidationError, validate_actor_registration, validate_event
 
 DEFAULT_DB = Path(__file__).resolve().parent / "ledger.db"
@@ -55,6 +57,13 @@ def event_out(row: dict) -> dict:
     }
 
 
+def load_batches(db: LedgerDb) -> dict[str, list[dict]]:
+    return {
+        batch_id: [event_out(row) for row in db.events_for_batch(batch_id)]
+        for batch_id in db.register_batches()
+    }
+
+
 def append_one(db: LedgerDb, raw: Any) -> dict:
     try:
         event = validate_event(raw)
@@ -77,16 +86,28 @@ def append_one(db: LedgerDb, raw: Any) -> dict:
         item["eventId"] == event["eventId"] and item["hash"] == event["hash"]
         for item in history
     )
-    if not already_stored:
-        try:
-            assert_transfer_allowed(history, event)
-        except InsufficientBalance as exc:
-            raise ApiError(
-                409,
-                "insufficient_balance",
-                "transfer exceeds the sender's balance",
-                balance=exc.available,
+    if not already_stored and event["type"] in {"BARTER", "TRANSFER"}:
+        batches = load_batches(db)
+        offers = derive_offers(batches)
+        if event["type"] == "BARTER":
+            try:
+                validate_barter_event(event, batches, offers)
+            except BarterError as exc:
+                raise ApiError(exc.status, exc.code, exc.detail, **exc.extra)
+        else:
+            balances = apply_deltas(
+                compute_balances(history),
+                barter_deltas(offers).get(event["batchId"]),
             )
+            requested = int(event["data"]["tokens"])
+            available = balances.get(event["actorId"], 0)
+            if requested > available:
+                raise ApiError(
+                    409,
+                    "insufficient_balance",
+                    "transfer exceeds the sender's balance",
+                    balance=available,
+                )
 
     data_json = json.dumps(
         event["data"],
@@ -155,7 +176,10 @@ def build_summary(db: LedgerDb, rows: list[dict], include_events: bool) -> dict:
         raise ApiError(404, "not_found", "batch not found")
     register_data = register["data"]
 
-    balances = compute_balances(events)
+    balances = apply_deltas(
+        compute_balances(events),
+        barter_deltas(derive_offers(load_batches(db))).get(register["batchId"]),
+    )
     last_seq = {register["actorId"]: rows[0]["seq"]}
     for row, event in zip(rows[1:], events[1:]):
         if event["type"] == "TRANSFER":
@@ -302,6 +326,30 @@ def create_app(db_path: str | None = None) -> FastAPI:
             "pricePerKgPaise": weighted_price(trades),
             "trades": trades,
         }
+
+    @app.get("/barter/offers")
+    def list_barter_offers(
+        actorId: str | None = None,
+        status: str | None = None,
+    ) -> dict:
+        offers = list(derive_offers(load_batches(db)).values())
+        if actorId:
+            offers = [
+                offer
+                for offer in offers
+                if actorId in (offer["actorId"], offer["withActorId"])
+            ]
+        if status:
+            offers = [offer for offer in offers if offer["status"] == status]
+        offers.sort(key=lambda offer: (offer["ts"], offer["offerId"]), reverse=True)
+        return {"offers": [offer_public(offer) for offer in offers]}
+
+    @app.get("/barter/offers/{offer_id}")
+    def get_barter_offer(offer_id: str) -> dict:
+        offer = derive_offers(load_batches(db)).get(offer_id)
+        if offer is None:
+            raise ApiError(404, "not_found", "offer not found")
+        return offer_public(offer)
 
     @app.get("/batches/{batch_id}/verify")
     def verify_batch(batch_id: str) -> dict:

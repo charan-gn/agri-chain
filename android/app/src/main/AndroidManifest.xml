@@ -61,6 +61,11 @@
             android:label="Batch history" />
 
         <activity
+            android:name=".barter.BarterActivity"
+            android:exported="false"
+            android:label="Barter" />
+
+        <activity
             android:name=".box.BoxActivity"
             android:exported="false"
             android:label="Transport box" />

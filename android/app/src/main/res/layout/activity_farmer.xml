@@ -26,6 +26,12 @@
         android:layout_marginTop="24dp"
         android:text="Register batch" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/barterButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Barter" />
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

@@ -7,6 +7,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.agrichain.batch.BatchQrActivity
 import com.agrichain.batch.BatchStore
 import com.agrichain.batch.RegisterBatchActivity
+import com.agrichain.barter.BarterActivity
 import com.agrichain.core.ActorIdentity
 import com.agrichain.core.Event
 import com.agrichain.databinding.ActivityFarmerBinding
@@ -31,6 +32,9 @@ class FarmerActivity : AppCompatActivity() {
         }
         binding.registerButton.setOnClickListener {
             startActivity(Intent(this, RegisterBatchActivity::class.java))
+        }
+        binding.barterButton.setOnClickListener {
+            startActivity(Intent(this, BarterActivity::class.java))
         }
     }
 
