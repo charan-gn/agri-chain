@@ -10,22 +10,21 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.agrichain.R
-import com.agrichain.data.SyncStore
 import com.agrichain.databinding.ActivityMeshBinding
-import java.util.UUID
 
 class MeshActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMeshBinding
-    private lateinit var transport: MeshTransport
-    private lateinit var relay: MeshRelay
+    private lateinit var runtime: MeshRuntime
+    private lateinit var nearby: NearbyMeshTransport
     private var running = false
-    private val senderId = "phone-${UUID.randomUUID().toString().take(8)}"
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
-        if (grants.values.all { it }) startMesh() else log("Mesh permissions denied")
+        val denied = grants.filterValues { !it }.keys
+        if (denied.isNotEmpty()) log("Denied: ${denied.joinToString()}")
+        startMesh()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,19 +32,27 @@ class MeshActivity : AppCompatActivity() {
         binding = ActivityMeshBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        transport = NearbyMeshTransport(this)
-        relay = MeshRelay(SyncEventSink(this))
-        binding.senderId.text = senderId
+        runtime = MeshRuntime.get(this)
+        nearby = NearbyMeshTransport(this, runtime.selfId)
+        runtime.logSink = { line -> ui { log(line) } }
+
+        binding.senderId.text = runtime.selfId
+        binding.gatewayNumberInput.setText(SmsSettings.gatewayNumber(this).orEmpty())
         binding.startButton.setOnClickListener { ensurePermissions() }
         binding.stopButton.setOnClickListener { stopMesh() }
+        binding.saveGatewayButton.setOnClickListener { saveGateway() }
         binding.broadcastButton.setOnClickListener { broadcastPending() }
+        binding.syncButton.setOnClickListener { syncNow() }
         binding.copyButton.setOnClickListener { copyPending() }
         binding.relayButton.setOnClickListener { relayPasted() }
         binding.stopButton.isEnabled = false
+        updateTransports()
+        refreshPending()
     }
 
     override fun onDestroy() {
-        if (running) transport.stop()
+        if (running) runtime.unregister(nearby)
+        runtime.logSink = null
         super.onDestroy()
     }
 
@@ -58,88 +65,112 @@ class MeshActivity : AppCompatActivity() {
 
     private fun startMesh() {
         if (running) return
-        transport.start(
-            senderId,
-            onEnvelope = { envelope -> onEnvelope(envelope) },
-            onLog = { line -> ui { log(line) } },
-        )
+        runtime.register(nearby)
         running = true
         binding.startButton.isEnabled = false
         binding.stopButton.isEnabled = true
-        binding.status.text = "Mesh running as $senderId"
+        binding.status.text = "Mesh running as ${runtime.selfId}"
         binding.status.setTextColor(getColor(R.color.status_ok))
+        updateTransports()
+        Thread {
+            val result = runtime.pump()
+            ui { log("startup sync: ${result.uploaded} uploaded, ${result.pending} pending") }
+        }.start()
     }
 
     private fun stopMesh() {
         if (!running) return
-        transport.stop()
+        runtime.unregister(nearby)
         running = false
         binding.startButton.isEnabled = true
         binding.stopButton.isEnabled = false
         binding.status.text = "Mesh stopped"
         binding.status.setTextColor(getColor(R.color.status_neutral))
+        updateTransports()
     }
 
-    private fun onEnvelope(envelope: MeshEnvelope) {
-        val result = relay.accept(envelope)
-        ui {
-            log(
-                "from ${envelope.senderId}: ${result.accepted} new, " +
-                    "${result.duplicates} duplicate"
+    private fun saveGateway() {
+        try {
+            val saved = SmsSettings.setGatewayNumber(
+                this,
+                binding.gatewayNumberInput.text.toString(),
             )
+            binding.gatewayNumberInput.setText(saved.orEmpty())
+            log(if (saved == null) "Gateway cleared" else "Gateway: $saved")
+            updateTransports()
+        } catch (error: IllegalArgumentException) {
+            log(error.message ?: "Bad number")
         }
-        if (result.accepted > 0) {
-            val peers = transport.broadcast(envelope)
-            if (peers > 0) ui { log("relayed to $peers peer(s)") }
-        }
-    }
-
-    private fun pendingEnvelope(): MeshEnvelope? {
-        val pending = SyncStore(this).pending()
-        if (pending.isEmpty()) return null
-        return MeshEnvelope(
-            MeshEnvelope.VERSION,
-            MeshEnvelope.KIND_EVENTS,
-            senderId,
-            System.currentTimeMillis(),
-            pending,
-        )
     }
 
     private fun broadcastPending() {
-        val envelope = pendingEnvelope()
-        if (envelope == null) {
-            log("No queued events to send")
-            return
-        }
-        val peers = transport.broadcast(envelope)
-        log("Sent ${envelope.events.size} event(s) to $peers peer(s)")
+        val sent = runtime.broadcastPending()
+        log("Sent queued envelope to $sent link(s)")
+        refreshPending()
+    }
+
+    private fun syncNow() {
+        binding.syncButton.isEnabled = false
+        Thread {
+            val result = runtime.pump()
+            ui {
+                log(
+                    "Sync: ${result.uploaded} uploaded, ${result.pending} pending" +
+                        (result.error?.let { " · $it" } ?: "")
+                )
+                binding.syncButton.isEnabled = true
+                refreshPending()
+            }
+        }.start()
     }
 
     private fun copyPending() {
-        val envelope = pendingEnvelope()
-        if (envelope == null) {
+        val pending = runtime.pending()
+        if (pending.isEmpty()) {
             log("No queued events to copy")
             return
         }
+        val text = MeshEnvelope.events(runtime.selfId, pending).encode()
         val clipboard = getSystemService(ClipboardManager::class.java)
-        clipboard.setPrimaryClip(
-            ClipData.newPlainText("AgriChain mesh envelope", envelope.encode())
-        )
-        log("Copied envelope with ${envelope.events.size} event(s)")
+        clipboard.setPrimaryClip(ClipData.newPlainText("AgriChain envelope", text))
+        log("Copied envelope with ${pending.size} event(s)")
     }
 
     private fun relayPasted() {
         val envelope = MeshEnvelope.parse(binding.envelopeInput.text.toString().trim())
         if (envelope == null) {
-            log("Not a valid v1 EVENTS envelope")
+            log("Not a valid v2 or v1 envelope")
             return
         }
-        onEnvelope(envelope)
+        val result = runtime.onEnvelope(envelope, "paste")
+        log("Pasted: ${result.freshEvents} new, ${result.uploaded} uploaded")
         binding.envelopeInput.text?.clear()
+        refreshPending()
+    }
+
+    private fun updateTransports() {
+        val smsReady = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.SEND_SMS,
+        ) == PackageManager.PERMISSION_GRANTED &&
+            SmsSettings.gatewayNumber(this) != null
+        binding.transports.text =
+            "nearby ${if (running) "on" else "off"} · sms ${if (smsReady) "ready" else "off"} · " +
+                "internet ${if (runtime.ledgerReachable()) "on" else "off"}"
+    }
+
+    private fun refreshPending() {
+        binding.status.post {
+            binding.status.text = "${runtime.pendingCount()} event(s) pending"
+            binding.status.setTextColor(
+                getColor(if (runtime.pendingCount() == 0) R.color.status_ok else R.color.status_neutral)
+            )
+        }
     }
 
     private fun meshPermissions(): List<String> = buildList {
+        add(Manifest.permission.SEND_SMS)
+        add(Manifest.permission.RECEIVE_SMS)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             add(Manifest.permission.BLUETOOTH_SCAN)
             add(Manifest.permission.BLUETOOTH_ADVERTISE)

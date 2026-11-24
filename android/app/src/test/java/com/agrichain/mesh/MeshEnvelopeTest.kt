@@ -1,82 +1,137 @@
 package com.agrichain.mesh
 
 import com.agrichain.core.Event
+import com.agrichain.core.Signer
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MeshEnvelopeTest {
 
-    private fun event(id: String, hash: String) = Event(
-        eventId = id,
-        batchId = "22222222-2222-4222-8222-222222222222",
-        type = "GPS",
-        actorId = "box:55555555-5555-4555-8555-555555555555",
+    private val batchId = "22222222-2222-4222-8222-222222222222"
+
+    private object TestSigner : Signer {
+        override val actorId = "farmer:11111111-1111-4111-8111-111111111111"
+        override fun sign(bytes: ByteArray): ByteArray = byteArrayOf(1, 2, 3)
+    }
+
+    private fun register() = Event.create(
+        batchId = batchId,
+        type = "REGISTER",
+        data = mapOf("crop" to "wheat", "grade" to "A", "weightKg" to 100),
+        signer = TestSigner,
         ts = 1764000000000,
-        lat = "17.385044",
-        lon = "78.486671",
-        data = mapOf("accuracyM" to 5),
-        prevHash = "aa",
-        hash = hash,
-        sig = "sig",
+        prevHash = "",
     )
 
-    private fun envelope(events: List<Event>) = MeshEnvelope(
-        MeshEnvelope.VERSION,
-        MeshEnvelope.KIND_EVENTS,
-        "phone-a",
-        1764000001000,
-        events,
+    private fun gps(prevHash: String) = Event.create(
+        batchId = batchId,
+        type = "GPS",
+        data = mapOf("accuracyM" to 5),
+        signer = TestSigner,
+        ts = 1764000001000,
+        lat = "17.385044",
+        lon = "78.486671",
+        prevHash = prevHash,
     )
 
     @Test
-    fun `envelope round trips`() {
-        val original = envelope(listOf(event("e1", "bb"), event("e2", "cc")))
+    fun `compact envelope round trips and recomputes the hash`() {
+        val first = register()
+        val second = gps(first.hash)
+        val original = MeshEnvelope.events("phone-a", listOf(first, second))
 
         val parsed = MeshEnvelope.parse(original.encode())
 
-        assertEquals(original, parsed)
+        assertEquals(MeshKind.EVENTS, parsed?.kind)
+        assertEquals(original.events, parsed?.events)
+        assertEquals(first.hash, parsed?.events?.get(0)?.hash)
+        assertEquals("AQID", parsed?.events?.get(1)?.sig)
     }
 
     @Test
-    fun `rejects wrong version kind and empty events`() {
-        val json = envelope(listOf(event("e1", "bb"))).toJson()
+    fun `compact envelope is smaller than the v1 envelope`() {
+        val event = register()
+        val v2 = MeshEnvelope.events("phone-a", listOf(event)).encode()
+        val v1 = JSONObject()
+            .put("v", 1)
+            .put("kind", "EVENTS")
+            .put("senderId", "phone-a")
+            .put("sentAt", 1764000000000)
+            .put("events", JSONArray().put(event.toJsonObject()))
+            .toString()
 
-        assertNull(MeshEnvelope.fromJson(JSONObject(json.toString()).put("v", 2)))
-        assertNull(MeshEnvelope.fromJson(JSONObject(json.toString()).put("kind", "OFFERS")))
+        assertTrue("v2=${v2.length} v1=${v1.length}", v2.length < v1.length)
+    }
+
+    @Test
+    fun `v1 envelopes still parse`() {
+        val event = register()
+        val v1 = JSONObject()
+            .put("v", 1)
+            .put("kind", "EVENTS")
+            .put("senderId", "phone-old")
+            .put("sentAt", 1764000000000)
+            .put("events", JSONArray().put(event.toJsonObject()))
+
+        val parsed = MeshEnvelope.fromJson(v1)
+
+        assertEquals(MeshKind.EVENTS, parsed?.kind)
+        assertEquals(6, parsed?.ttl)
+        assertEquals(listOf(event), parsed?.events)
+    }
+
+    @Test
+    fun `ack envelopes round trip`() {
+        val ack = MeshEnvelope.ack("phone-b", listOf("e1", "e2"))
+
+        val parsed = MeshEnvelope.parse(ack.encode())
+
+        assertEquals(MeshKind.ACK, parsed?.kind)
+        assertEquals(listOf("e1", "e2"), parsed?.ackedEventIds)
+        assertTrue(parsed?.events?.isEmpty() == true)
+    }
+
+    @Test
+    fun `rejects wrong version kind and empty bodies`() {
+        val json = MeshEnvelope.events("phone-a", listOf(register())).toJson()
+
+        assertNull(MeshEnvelope.fromJson(JSONObject(json.toString()).put("v", 3)))
+        assertNull(MeshEnvelope.fromJson(JSONObject(json.toString()).put("k", "X")))
         assertNull(
             MeshEnvelope.fromJson(
-                JSONObject(json.toString()).put("events", org.json.JSONArray())
+                JSONObject(json.toString()).put("ev", JSONArray())
+            )
+        )
+        assertNull(
+            MeshEnvelope.fromJson(
+                JSONObject(json.toString())
+                    .put("k", "A")
+                    .put("ev", JSONArray())
+                    .put("ack", JSONArray())
             )
         )
     }
 
     @Test
     fun `rejects an envelope with a malformed event`() {
-        val json = envelope(listOf(event("e1", "bb"))).toJson()
-        json.getJSONArray("events").getJSONObject(0).remove("hash")
+        val json = MeshEnvelope.events("phone-a", listOf(register())).toJson()
+        json.getJSONArray("ev").getJSONObject(0).remove("g")
 
         assertNull(MeshEnvelope.fromJson(json))
     }
 
     @Test
-    fun `relay dedupes by event id`() {
-        val sink = FakeSink()
-        val relay = MeshRelay(sink)
-        val batch = envelope(listOf(event("e1", "bb"), event("e2", "cc")))
+    fun `onlyEvents keeps the allowed types`() {
+        val first = register()
+        val second = gps(first.hash)
+        val envelope = MeshEnvelope.events("phone-a", listOf(first, second))
 
-        val first = relay.accept(batch)
-        val second = relay.accept(batch)
+        val filtered = envelope.onlyEvents { it.type == "REGISTER" }
 
-        assertEquals(MeshResult(accepted = 2, duplicates = 0), first)
-        assertEquals(MeshResult(accepted = 0, duplicates = 2), second)
-        assertEquals(setOf("e1", "e2"), sink.seen)
-    }
-
-    private class FakeSink : EventSink {
-        val seen = mutableSetOf<String>()
-
-        override fun enqueue(event: Event): Boolean = seen.add(event.eventId)
+        assertEquals(listOf("REGISTER"), filtered.events.map { it.type })
     }
 }
