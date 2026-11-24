@@ -74,6 +74,11 @@
             android:name=".prices.PricesActivity"
             android:exported="false"
             android:label="Mandi prices" />
+
+        <activity
+            android:name=".data.SyncActivity"
+            android:exported="false"
+            android:label="Ledger sync" />
     </application>
 
 </manifest>
