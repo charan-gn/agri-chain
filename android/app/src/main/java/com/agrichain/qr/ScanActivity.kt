@@ -2,6 +2,7 @@ package com.agrichain.qr
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import com.agrichain.buyer.BuyerHistoryActivity
 import com.agrichain.databinding.ActivityScanBinding
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -17,10 +18,11 @@ class ScanActivity : AppCompatActivity() {
             return@registerForActivityResult
         }
         val batchId = BatchQrCodec.parse(contents)
-        binding.result.text = if (batchId == null) {
-            "Not an AgriChain batch QR"
+        if (batchId == null) {
+            binding.result.text = "Not an AgriChain batch QR"
         } else {
-            "Valid batch QR\n$batchId"
+            binding.result.text = "Valid batch QR\n$batchId"
+            startActivity(BuyerHistoryActivity.intent(this, batchId))
         }
     }
 

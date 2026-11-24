@@ -47,6 +47,11 @@
             android:name=".qr.ScanActivity"
             android:exported="false"
             android:label="Scan batch QR" />
+
+        <activity
+            android:name=".buyer.BuyerHistoryActivity"
+            android:exported="false"
+            android:label="Batch history" />
     </application>
 
 </manifest>

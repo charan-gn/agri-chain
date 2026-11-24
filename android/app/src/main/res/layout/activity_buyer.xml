@@ -1,29 +1,85 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center"
-    android:orientation="vertical"
-    android:padding="24dp">
+    android:fillViewport="true">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Buyer"
-        android:textAppearance="?attr/textAppearanceHeadlineMedium" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="Scan a batch QR to check its route and history."
-        android:textAppearance="?attr/textAppearanceBodyMedium" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/scanButton"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="Scan batch QR" />
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="24dp">
 
-</LinearLayout>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Buyer"
+            android:textAppearance="?attr/textAppearanceHeadlineMedium" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:text="Scan a batch QR to check its route and history."
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/scanButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Scan batch QR" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Or open a batch by id"
+            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+        <EditText
+            android:id="@+id/batchIdInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="batch uuid"
+            android:inputType="text"
+            android:maxLines="1" />
+
+        <Button
+            android:id="@+id/openHistoryButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Open history" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Ledger server"
+            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+        <EditText
+            android:id="@+id/ledgerUrlInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="http://10.0.2.2:8000"
+            android:inputType="textUri"
+            android:maxLines="1" />
+
+        <Button
+            android:id="@+id/saveUrlButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Save server" />
+
+        <TextView
+            android:id="@+id/urlStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+    </LinearLayout>
+
+</ScrollView>
