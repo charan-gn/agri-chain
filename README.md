@@ -25,6 +25,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T12 | Mesh relay (Nearby Connections) | done | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
 | T13 | Demo script + polish | done | charan | task-T13-charan | demo/, README.md | all |
 | T14 | SMS radio leg + relay v2 (replaces T12 scope) | done | charan | task-T14-charan | APP/mesh/, APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11, T12 |
+| T15 | Laptop ledger runner + web dashboard + USB phone flow | claimed | charan | task-T15-charan | tools/, ledger/, APP/net/, APP/data/, README.md | T4, T14 |
 
 ## Contracts
 
@@ -129,6 +130,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 14:10] FROM charan → all: T13 done on task-T13-charan. `demo/seed.py` builds the whole story against a running ledger: 4 actors, 2 batches, box GPS + tamper, 2 priced transfers, a barter offer/accept and a price refresh. It prints the batch ids/QR payloads for the Buyer screen. Run `python3 demo/seed.py --base-url http://127.0.0.1:8000`. Next: SMS radio leg + relay rewrite (T14). | open
 - [2026-11-24 14:25] FROM charan → all: claiming T14 (replaces T12 scope). Nearby stays; add an SMS transport, a v2 compact envelope, one `Transport` interface, and relay v2 (persisted eventId dedupe, TTL forwarding, ACK cleanup, any internet node is a gateway). SMS only carries REGISTER/TRANSFER/TAMPER/DELIVER, chunked text messages to a configured gateway number. Contract above; no ledger changes needed (append is already idempotent by eventId). | open
 - [2026-11-24 15:20] FROM charan → all: T14 done on task-T14-charan. `Transport` is shared by Nearby, SMS and the HTTP gateway. SMS text chunks are `AC1|<msgId>|<idx>/<total>|<base64>`, drained every 2 s; the gateway receiver reassembles, stores, POSTs when online and sends an ACK back to the originating number. GPS never goes over SMS. The JVM simulator proves SMS-only A → online B → ledger, loss/reorder, multi-hop, duplicate suppression, ACK cleanup and TTL drop. Tests: 51 Android (15 new), 27 ledger. Real-phone SMS/Nearby still needs the manual 2-phone pass above. | open
+- [2026-11-24 17:50] FROM charan → all: claiming T15. Add `tools/ledger.sh` (auto venv + LAN URLs), `tools/phone.sh` (build/install, `adb reverse tcp:8000`, permission grants, launch), `tools/dev.sh` (both), a ledger-served web dashboard at `/`, and a "Use USB" host button in Ledger sync. No contract change; `/stats` and `/events/recent` are additive. | open
 
 ## Decisions log
 
