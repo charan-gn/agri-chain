@@ -25,6 +25,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T12 | Mesh relay (Nearby Connections) | done | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
 | T13 | Demo script + polish | done | charan | task-T13-charan | demo/, README.md | all |
 | T14 | SMS radio leg + relay v2 (replaces T12 scope) | done | charan | task-T14-charan | APP/mesh/, APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11, T12 |
+| T16 | Linux/Docker hosting + public buyer web app + USB preset | claimed | sresta | task-T16-sresta | webapp/, deploy/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_main.xml, README.md | T4, T14 |
 
 ## Contracts
 
@@ -99,6 +100,12 @@ BatchSummary:
 
 `ownerId` = holder of the largest balance (ties: most recent transfer). A TRANSFER may not exceed the sender's balance; the ledger rejects it with `409 insufficient_balance`. Trade price is the token-weighted average of TRANSFER events that carry `pricePerKgPaise` for that crop (`null` with no trades). Barter is a two-party signed handshake posted through `POST /events`: an `offer` event on the giver's batch, then an `accept` event on the counterparty's batch (mirrored `giveKg`/`wantKg`, same `offerId`), or a `cancel` event by the offerer. An accepted pair swaps `giveKg` on the offer batch and `wantKg` on the want batch as a balance overlay (no TRANSFER events); balances, owner and later transfer checks include accepted swaps. `409` codes: `offer_not_open`, `offer_mismatch`, `not_counterparty`, `duplicate_offer`.
 
+### Web app and USB (T16)
+
+The public web app is a separate FastAPI process (`webapp/`, port 8080) that proxies the read-only ledger API; it does not change ledger routes. `LEDGER_URL` selects the ledger (default `http://127.0.0.1:8000`). Routes: `GET /` dashboard, `GET /trace?batch=<id>` buyer trace, `GET /api/health`, `/api/batches`, `/api/batches/{id}`, `/api/prices`, `/api/offers`, `/api/actors/{id}`, `POST /api/prices/refresh`. Upstream errors pass through as `502 {"error":"ledger_unreachable","detail":"..."}`.
+
+USB test: `adb reverse tcp:8000 tcp:8000` maps the phone's `127.0.0.1:8000` to the laptop ledger; MainActivity has a "Use USB link" button that sets that host and checks `/health`. No APK rebuild is needed to change hosts.
+
 ### Mesh and QR
 
 One envelope, compact keys: `{"v":2,"k":"E","id":"<uuid>","s":"<senderId>","t":ms,"ttl":6,"ev":[...]}`. `k` is `E` (events) or `A` (ack, `"ack":[eventId,...]`). Event keys: `i` eventId, `b` batchId, `y` type, `a` actorId, `t` ts, `la` lat, `lo` lon, `d` data, `p` prevHash, `g` sig. `hash` is omitted; receivers recompute it. v1 envelopes still parse. Transports implement `Transport { id, available(), maxPayload, send(envelope), onReceive }`: Nearby (Bluetooth/WiFi Direct), SMS (GSM radio), Internet (HTTP to the ledger). SMS sends only `REGISTER`/`TRANSFER`/`TAMPER`/`DELIVER` (never GPS) as text SMS, base64 chunks ≤140 chars, `AC1|<msgId>|<idx>/<total>|<base64>`, to the gateway number in settings. Receivers reassemble before relaying.
@@ -129,6 +136,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 14:10] FROM charan → all: T13 done on task-T13-charan. `demo/seed.py` builds the whole story against a running ledger: 4 actors, 2 batches, box GPS + tamper, 2 priced transfers, a barter offer/accept and a price refresh. It prints the batch ids/QR payloads for the Buyer screen. Run `python3 demo/seed.py --base-url http://127.0.0.1:8000`. Next: SMS radio leg + relay rewrite (T14). | open
 - [2026-11-24 14:25] FROM charan → all: claiming T14 (replaces T12 scope). Nearby stays; add an SMS transport, a v2 compact envelope, one `Transport` interface, and relay v2 (persisted eventId dedupe, TTL forwarding, ACK cleanup, any internet node is a gateway). SMS only carries REGISTER/TRANSFER/TAMPER/DELIVER, chunked text messages to a configured gateway number. Contract above; no ledger changes needed (append is already idempotent by eventId). | open
 - [2026-11-24 15:20] FROM charan → all: T14 done on task-T14-charan. `Transport` is shared by Nearby, SMS and the HTTP gateway. SMS text chunks are `AC1|<msgId>|<idx>/<total>|<base64>`, drained every 2 s; the gateway receiver reassembles, stores, POSTs when online and sends an ACK back to the originating number. GPS never goes over SMS. The JVM simulator proves SMS-only A → online B → ledger, loss/reorder, multi-hop, duplicate suppression, ACK cleanup and TTL drop. Tests: 51 Android (15 new), 27 ledger. Real-phone SMS/Nearby still needs the manual 2-phone pass above. | open
+- [2026-11-24 18:10] FROM sresta → all: T15 is already claimed on task-T15-charan, so I am taking T16 (complementary, no overlap). T16 hosts the ledger with Docker/Linux scripts in `deploy/`, adds a separate public buyer web app in `webapp/` on :8080, and a "Use USB link" preset on MainActivity. T15 keeps the ledger-served dashboard and the Ledger sync USB button. | open
 
 ## Decisions log
 
