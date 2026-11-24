@@ -25,7 +25,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T12 | Mesh relay (Nearby Connections) | done | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
 | T13 | Demo script + polish | done | charan | task-T13-charan | demo/, README.md | all |
 | T14 | SMS radio leg + relay v2 (replaces T12 scope) | done | charan | task-T14-charan | APP/mesh/, APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11, T12 |
-| T16 | Linux/Docker hosting + public buyer web app + USB preset | claimed | sresta | task-T16-sresta | webapp/, deploy/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_main.xml, README.md | T4, T14 |
+| T16 | Linux/Docker hosting + public buyer web app + USB preset | done | sresta | task-T16-sresta | webapp/, deploy/, .dockerignore, APP/MainActivity.kt, android/app/src/main/res/layout/activity_main.xml, README.md | T4, T14 |
 
 ## Contracts
 
@@ -102,7 +102,7 @@ BatchSummary:
 
 ### Web app and USB (T16)
 
-The public web app is a separate FastAPI process (`webapp/`, port 8080) that proxies the read-only ledger API; it does not change ledger routes. `LEDGER_URL` selects the ledger (default `http://127.0.0.1:8000`). Routes: `GET /` dashboard, `GET /trace?batch=<id>` buyer trace, `GET /api/health`, `/api/batches`, `/api/batches/{id}`, `/api/prices`, `/api/offers`, `/api/actors/{id}`, `POST /api/prices/refresh`. Upstream errors pass through as `502 {"error":"ledger_unreachable","detail":"..."}`.
+The public web app is a separate FastAPI process (`webapp/`, port 8080) that proxies the read-only ledger API; it does not change ledger routes. `LEDGER_URL` selects the ledger (default `http://127.0.0.1:8000`). Routes: `GET /` dashboard, `GET /trace?batch=<id>` buyer trace, `GET /api/config`, `/api/health`, `/api/batches`, `/api/batches/{id}`, `/api/prices`, `/api/offers`, `/api/actors/{id}`, `POST /api/prices/refresh`. Upstream errors pass through as `502 {"error":"ledger_unreachable","detail":"..."}`.
 
 USB test: `adb reverse tcp:8000 tcp:8000` maps the phone's `127.0.0.1:8000` to the laptop ledger; MainActivity has a "Use USB link" button that sets that host and checks `/health`. No APK rebuild is needed to change hosts.
 
@@ -137,6 +137,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 14:25] FROM charan → all: claiming T14 (replaces T12 scope). Nearby stays; add an SMS transport, a v2 compact envelope, one `Transport` interface, and relay v2 (persisted eventId dedupe, TTL forwarding, ACK cleanup, any internet node is a gateway). SMS only carries REGISTER/TRANSFER/TAMPER/DELIVER, chunked text messages to a configured gateway number. Contract above; no ledger changes needed (append is already idempotent by eventId). | open
 - [2026-11-24 15:20] FROM charan → all: T14 done on task-T14-charan. `Transport` is shared by Nearby, SMS and the HTTP gateway. SMS text chunks are `AC1|<msgId>|<idx>/<total>|<base64>`, drained every 2 s; the gateway receiver reassembles, stores, POSTs when online and sends an ACK back to the originating number. GPS never goes over SMS. The JVM simulator proves SMS-only A → online B → ledger, loss/reorder, multi-hop, duplicate suppression, ACK cleanup and TTL drop. Tests: 51 Android (15 new), 27 ledger. Real-phone SMS/Nearby still needs the manual 2-phone pass above. | open
 - [2026-11-24 18:10] FROM sresta → all: T15 is already claimed on task-T15-charan, so I am taking T16 (complementary, no overlap). T16 hosts the ledger with Docker/Linux scripts in `deploy/`, adds a separate public buyer web app in `webapp/` on :8080, and a "Use USB link" preset on MainActivity. T15 keeps the ledger-served dashboard and the Ledger sync USB button. | open
+- [2026-11-25 01:15] FROM sresta → all: T16 done. Run `deploy/serve-linux.sh --lan` (or `cd deploy && docker compose up -d --build`) for ledger :8000 + web :8080; `deploy/usb.sh --install` (Windows `deploy/usb.ps1 -Install`) does `adb reverse tcp:8000`/`8080`, installs and launches. Dashboard and `/trace?batch=` show route, tamper flags, balances, prices and offers from the public ledger API. MainActivity "Use USB link" sets `http://127.0.0.1:8000` and checks `/health`. Tests: 27 ledger + 5 webapp + 51 Android; `assembleDebug` builds. T15 files untouched. | done
 
 ## Decisions log
 
@@ -158,6 +159,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-24 charan: T13 seeds the demo through the public REST API with fresh keys per run, so it never needs ledger internals. Batch ids are printed for the Buyer screen; phones still register their own actors.
 - 2026-11-24 charan: T14 replaces the v1 mesh envelope with compact v2 keys and a shared `Transport` interface. Nearby remains; SMS is the GSM radio leg (text messages, ≤140-char base64 chunks, gateway number in settings); internet is plain HTTP to the ledger. ACKs are relayed like events so any internet node can clear the mesh. The JVM simulator is the proof; phone tests are manual.
 - 2026-11-24 charan: SMS uses `AC1|<msgId>|<idx>/<total>|<base64>` with a 140-char payload (≤160-char SMS), 2 s between sends, and a persisted outbox so a dropped chunk is retried on the next broadcast. ACKs go to the inbound `originatingAddress`, not the configured gateway, and are not added to the seen-set (an ACK can arrive before its event).
+- 2026-11-25 sresta: T16 web app is a separate read-only FastAPI proxy on :8080 (`LEDGER_URL`, default `http://127.0.0.1:8000`); the ledger stays the single writer and no ledger route/schema changed. Linux hosting is native venv (`deploy/serve-linux.sh`) or Docker Compose with a `ledger-data` volume; Windows uses `deploy/serve.ps1`.
+- 2026-11-25 sresta: USB testing uses `adb reverse tcp:8000`/`8080` plus the MainActivity "Use USB link" preset (`http://127.0.0.1:8000`); this avoids LAN IP edits and works on a physical phone with USB debugging.
 
 ## Blockers
 
@@ -186,9 +189,17 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 pip install -r requirements-dev.txt
 python3 -m pytest -q
 
+# Web app + dashboard (T16): ledger :8000 and public web app :8080
+./deploy/serve-linux.sh --lan        # Linux/macOS/WSL
+# or: cd deploy && docker compose up -d --build
+# Windows: .\deploy\serve.ps1 -Lan
+# Dashboard http://127.0.0.1:8080 · buyer trace http://127.0.0.1:8080/trace?batch=<id>
+cd webapp && ../.venv/bin/python -m pytest -q   # 5 webapp tests
+
 # Android skeleton (T1). JDK 17 + SDK 36 required.
 cd android && ./gradlew installDebug
-# Default ledger URL for emulator: http://10.0.2.2:8000; use the laptop LAN IP on phones.
+# Emulator default: http://10.0.2.2:8000. USB phone: run deploy/usb.sh --install
+# (Windows: .\deploy\usb.ps1 -Install) then tap "Use USB link" in the app.
 
 # Transport box (T6)
 # Launcher → "This is the transport box".
