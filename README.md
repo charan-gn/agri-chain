@@ -16,10 +16,10 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T3 | Minimal UI shell (farmer / buyer) | done | charan | task-T3-charan | APP/ui/, APP/MainActivity.kt, android/app/src/main/res/layout/, android/app/src/main/AndroidManifest.xml | T1 |
 | T4 | Ledger node: hash-chained log + REST API | done | charan | task-T4-charan | ledger/ | T1 |
 | T5 | Token mint/transfer + price from trades | done | charan | task-T5-charan | ledger/tokens.py, ledger/app.py, ledger/db.py, ledger/tests/, README.md | T4 |
-| T6 | Box app: GPS logging + event signing | claimed | Laasya | task-T6-laasya | APP/box/, APP/crypto/ | T1, T4 |
-| T7 | Box app: tamper triggers | open | — | — | APP/box/ | T6 |
+| T6 | Box app: GPS logging + event signing | done | Laasya | task-T6-laasya | APP/box/, APP/MainActivity.kt, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{box,main}.xml | T1, T4 |
+| T7 | Box app: tamper triggers | done | Laasya | task-T7-laasya | APP/box/, android/app/src/main/res/layout/activity_box.xml | T6 |
 | T8 | Buyer history view (route, tamper flags) | claimed | charan | task-T8-charan | APP/buyer/, APP/net/, APP/ui/BuyerActivity.kt, APP/qr/ScanActivity.kt, android/app/src/main/res/layout/activity_{buyer,buyer_history}.xml, android/app/src/main/AndroidManifest.xml | T2, T3, T4 |
-| T9 | Mandi prices: API, cache, chart | open | — | — | ledger/prices.py, APP/prices/ | T4 |
+| T9 | Mandi prices: API, cache, chart | done | Laasya | task-T9-laasya | ledger/prices.py, ledger/app.py, ledger/tests/test_prices.py, APP/prices/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,prices}.xml, android/app/src/main/AndroidManifest.xml | T4 |
 | T10 | Barter: offer / accept / swap | open | — | — | ledger/barter.py, APP/barter/ | T4, T5 |
 | T11 | Offline SQLite queue + sync | open | — | — | APP/data/ | T2, T4 |
 | T12 | Mesh relay (Nearby Connections) | open | — | — | APP/mesh/ | T11 |
@@ -109,9 +109,15 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-23 23:55] FROM charan → all: T1 done, contracts v1 frozen above. T2 is the next open task. Register all actors online during demo setup before the offline segment. | open
 - [2026-11-24 00:17] FROM charan → all: T2 done. Reuse `APP/core/` for canonical JSON, events and signing (T6/T11 especially). REGISTER is signed locally; `BatchStore` uses SharedPreferences as a placeholder until T11's SQLite queue. No ledger upload yet; navigation lands with T3. | open
 - [2026-11-24 00:30] FROM charan → all: T3 done. Launcher → Farmer (register, my batches, QR) or Buyer (scan QR). Buyer history is T8; ledger T4 is next. | open
-- [2026-11-24 00:26] FROM Laasya → all: charan claimed T4 before my claim push, so I am claiming T6 (box GPS + signing) on task-T6-laasya. I will reuse APP/core Event/ActorIdentity and build against the ledger contract while T4 is in progress. | open
+- [2026-11-24 00:26] FROM Laasya → all: charan claimed T4 before my claim push, so I am claiming T6 (box GPS + signing) on task-T6-laasya. I will reuse APP/core Event/ActorIdentity and build against the ledger contract while T4 is in progress. | done
 - [2026-11-24 00:55] FROM charan → all: T4 done. Ledger runs from `ledger/`; all endpoints above are live and tested. Actors must be registered via `POST /actors` (no Android registration UI yet). T5 is next. | open
 - [2026-11-24 01:05] FROM charan → all: T5 done. `TRANSFER` checks sender balance; `GET /trades?crop=` returns token-weighted trade price. Reuse `ledger/tokens.py` for T10 swaps; T8 can show balances and price. | open
+- [2026-11-24 11:22] FROM Laasya → all: T6 done on task-T6-laasya. Box mode has actor registration, QR bind via `GET /batches/{id}`, GPS every 3 s signed as `GPS` events with hash chaining into `BatchStore`, online head fetch + offline fallback. `testDebugUnitTest` passes (5 T6 tests + T2 tests) on JDK 17/SDK 36. T11: keep `BatchStore.all()/save()` or migrate `BoxEventLog`; T7 can extend `APP/box/` for tamper events. | done
+- [2026-11-24 11:24] FROM Laasya → all: T6 merged to main; claiming T7 (tamper triggers) on task-T7-laasya. Movement/light/proximity sensors plus a 200 m geofence emit signed `TAMPER` events into the same box chain; demo simulate buttons included. | done
+- [2026-11-24 11:39] FROM Laasya → all: T7 done on task-T7-laasya. Box screen arms accelerometer/light/proximity listeners and a 200 m geofence; triggers write signed `TAMPER` events (`kind` + `detail`) through `BoxEventLog` into the same local chain as GPS. Demo: bind → arm → "Set 200 m geofence here" → move the emulator fix, or use "Simulate tamper". `testDebugUnitTest` passes (8 T7 tests: 5 rules + 3 events). T8 can read `tamperCount` or filter `type=="TAMPER"`; no contract change. | open
+- [2026-11-24 11:42] FROM Laasya → all: T7 merged to main; claiming T9 (mandi prices: API, cache, chart) on task-T9-laasya. I will serve `GET /prices` from `ledger/prices.py` with a seeded cache and add an offline-first `APP/prices/` repository + chart screen. T8 can call `PriceRepository` after it lands; contract unchanged. | done
+- [2026-11-24 11:45] FROM Laasya → all: T9 Touches updated: the two `/prices` routes are an `APIRouter` in `ledger/prices.py` included with 2 lines in `ledger/app.py` (T4 is done), plus tests. On Android I need one launcher button and one manifest entry for the prices screen. T8 owns the manifest right now, so I will implement the rest first and rebase onto T8 before touching it; buyer files stay untouched. | done
+- [2026-11-24 11:51] FROM Laasya → all: T9 done on task-T9-laasya. `ledger/prices.py` seeds 11 crop/market rates (wheat, rice, maize, chilli, cotton across Telangana mandis), caches snapshots in SQLite and serves `GET /prices` + `POST /prices/refresh` via an APIRouter (2-line hook in `app.py`). Refresh walks ±2.5% deterministically per minute; `_next_price` is the swap point for a real Agmarknet feed. Android: launcher → "Mandi prices" (crop/market spinners, custom bar chart, SharedPreferences cache, offline fallback). Tests: 20 ledger (5 new) + 23 Android (5 new) pass. Also set `usesCleartextTraffic=true`: targetSdk 36 blocks plain `http://` to the local ledger, which would break both the box and prices on a device. T8/T13 can reuse `PriceRepository` or the API; contract unchanged. | open
 
 ## Decisions log
 
@@ -124,6 +130,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-24 charan: Per-role AndroidKeyStore EC P-256 identity (`farmer`, `buyer`, `box`); T2 signs REGISTER locally and keeps batches in SharedPreferences until T11 replaces it.
 - 2026-11-24 charan: T4 ledger is SQLite + FastAPI, strict one-head append, idempotent `eventId` retries; PRICE events use the `market` pseudo-batch chain.
 - 2026-11-24 charan: T5 trade price is the token-weighted average of priced TRANSFER events per crop; transfers above the sender balance return `409 insufficient_balance`.
+- 2026-11-24 Laasya: T7 uses the frozen TAMPER contract only. Movement = ≥2.5 m/s² deviation from gravity (5 s cooldown), light = ≥200 lux change (3 s), proximity = near/far change, geofence = >200 m from the anchor fix, checked on each GPS fix. Events carry `kind` + optional `detail` and no lat/lon.
+- 2026-11-24 Laasya: T9 mandi prices use a local simulated feed (no Agmarknet key): 11 seeded crop/market pairs, SQLite snapshots, ±2.5% deterministic per-minute walk on refresh, source `demo-mandi`. The REST shape is unchanged; `_next_price` is the single swap point for a real feed.
 
 ## Blockers
 
@@ -156,6 +164,25 @@ python3 -m pytest -q
 cd android && ./gradlew installDebug
 # Default ledger URL for emulator: http://10.0.2.2:8000; use the laptop LAN IP on phones.
 
-# T2 unit tests (canonical event hash + QR codec)
+# Transport box (T6)
+# Launcher → "This is the transport box".
+# 1. Set the ledger URL, tap "Register box online" (POST /actors).
+# 2. Scan the farmer's batch QR, then "Bind" (GET /batches/{id} → lastHash).
+# 3. "Start logging"; each GPS fix is signed and hash-chained locally.
+#    No network is needed after binding; screen stays on while the box screen is open.
+
+# Tamper detection (T7)
+# After binding, tap "Arm tamper detection".
+#  - Movement (accelerometer), light and proximity changes sign TAMPER events automatically.
+#  - "Set 200 m geofence here" anchors a fence at the current fix; keep GPS logging on
+#    so each fix is checked against it.
+#  - "Simulate tamper (demo)" emits a TAMPER event without touching the sensors.
+
+# Mandi prices (T9)
+# Launcher → "Mandi prices"; set the ledger URL, pick a crop/market, "Refresh prices".
+# The ledger seeds 11 crop/market rates and caches snapshots in SQLite; the app keeps
+# the last successful response in SharedPreferences, so the chart still works offline.
+
+# Unit tests (canonical event hash, QR codec, box GPS + tamper events)
 cd android && ./gradlew testDebugUnitTest
 ```

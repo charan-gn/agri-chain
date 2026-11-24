@@ -19,6 +19,7 @@ from crypto import (
     verify_signature,
 )
 from db import BatchNotFound, EventConflict, LedgerDb, PrevMismatch
+from prices import router as prices_router
 from tokens import (
     InsufficientBalance,
     assert_transfer_allowed,
@@ -332,6 +333,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
                 batches.append(summary)
         return {"batches": batches}
 
+    app.include_router(prices_router)
     return app
 
 

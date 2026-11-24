@@ -3,16 +3,23 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <uses-feature
         android:name="android.hardware.camera"
+        android:required="false" />
+
+    <uses-feature
+        android:name="android.hardware.location.gps"
         android:required="false" />
 
     <application
         android:allowBackup="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AgriChain">
+        android:theme="@style/Theme.AgriChain"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
@@ -52,6 +59,16 @@
             android:name=".buyer.BuyerHistoryActivity"
             android:exported="false"
             android:label="Batch history" />
+
+        <activity
+            android:name=".box.BoxActivity"
+            android:exported="false"
+            android:label="Transport box" />
+
+        <activity
+            android:name=".prices.PricesActivity"
+            android:exported="false"
+            android:label="Mandi prices" />
     </application>
 
 </manifest>
