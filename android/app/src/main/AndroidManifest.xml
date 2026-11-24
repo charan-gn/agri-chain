@@ -18,7 +18,8 @@
         android:allowBackup="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AgriChain">
+        android:theme="@style/Theme.AgriChain"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
@@ -58,6 +59,11 @@
             android:name=".box.BoxActivity"
             android:exported="false"
             android:label="Transport box" />
+
+        <activity
+            android:name=".prices.PricesActivity"
+            android:exported="false"
+            android:label="Mandi prices" />
     </application>
 
 </manifest>
