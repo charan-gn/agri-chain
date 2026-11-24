@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.agrichain.databinding.ActivityMainBinding
 import com.agrichain.box.BoxActivity
 import com.agrichain.data.SyncActivity
+import com.agrichain.mesh.MeshActivity
 import com.agrichain.prices.PricesActivity
 import com.agrichain.ui.BuyerActivity
 import com.agrichain.ui.FarmerActivity
@@ -31,6 +32,9 @@ class MainActivity : AppCompatActivity() {
         }
         binding.syncButton.setOnClickListener {
             startActivity(Intent(this, SyncActivity::class.java))
+        }
+        binding.meshButton.setOnClickListener {
+            startActivity(Intent(this, MeshActivity::class.java))
         }
     }
 }

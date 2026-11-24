@@ -22,7 +22,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T9 | Mandi prices: API, cache, chart | done | Laasya | task-T9-laasya | ledger/prices.py, ledger/app.py, ledger/tests/test_prices.py, APP/prices/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,prices}.xml, android/app/src/main/AndroidManifest.xml | T4 |
 | T10 | Barter: offer / accept / swap | done | charan | task-T10-charan | ledger/barter.py, ledger/app.py, ledger/tests/, APP/barter/, APP/ui/FarmerActivity.kt, android/app/src/main/res/layout/activity_{farmer,barter}.xml, android/app/src/main/AndroidManifest.xml, README.md | T4, T5 |
 | T11 | Offline SQLite queue + sync | done | charan | task-T11-charan | APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/data/, README.md | T2, T4 |
-| T12 | Mesh relay (Nearby Connections) | claimed | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
+| T12 | Mesh relay (Nearby Connections) | done | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
 | T13 | Demo script + polish | open | — | — | demo/, README.md | all |
 
 ## Contracts
@@ -124,6 +124,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 12:05] FROM charan → all: claiming T10 (barter). Published above: offers/accepts/cancels are signed BARTER events via `POST /events`; accepts mirror the offer and swap balances on both batches as an overlay. Two new read-only endpoints under `/barter/offers`. No changes to existing event fields. | open
 - [2026-11-24 12:35] FROM charan → all: T10 done on task-T10-charan. Offer/accept/cancel are signed BARTER events; the ledger validates both sides and applies accepted swaps to balances, owner and later TRANSFER checks. `GET /barter/offers?actorId=&status=` lists them. Farmer → Barter: pick a ledger batch, give/want kg, counterparty batch + actor; counterparty taps Accept. Tests: 27 ledger (7 new), 28 Android (2 new). T11 is next. | open
 - [2026-11-24 13:05] FROM charan → all: T11 done on task-T11-charan. Launcher → "Ledger sync": register farmer/buyer/box actors once, then upload local REGISTER/GPS/TAMPER events. A SQLite outbox (`agrichain_sync.db`) survives restarts; `SyncPlanner` walks prevHash from the server head, skips events already stored, uploads REGISTER batches first, and refetches the head on `409 prev_mismatch` before retrying. Tests: 32 Android (4 new), 27 ledger. T12 mesh is next. | open
+- [2026-11-24 13:40] FROM charan → all: T12 done on task-T12-charan. Launcher → "Mesh relay": Nearby Connections (P2P_CLUSTER) advertises and discovers peers, relays the frozen v1 EVENTS envelope unchanged, and enqueues new events into the T11 SQLite outbox (dedupe by eventId). Emulator fallback: "Copy queued envelope" on one phone, paste and "Relay pasted envelope" on another; both paths feed the same queue. Tests: 36 Android (4 new), 27 ledger. T13 demo is next. | open
 
 ## Decisions log
 
@@ -141,6 +142,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-24 charan: T8 caches the last successful `/batches/{id}` summary per batch in SharedPreferences; history renders from cache when offline. Ledger host is stored app-wide (`LedgerSettings`), default `http://10.0.2.2:8000` for the emulator.
 - 2026-11-24 charan: T10 barter offers are derived from BARTER events (no offer table). An accepted offer applies a balance overlay on both batches instead of writing TRANSFER events, so one accept does not need a multi-chain atomic append; `GET /batches` and TRANSFER checks use the overlaid balances.
 - 2026-11-24 charan: T11 keeps `BatchStore` as the screen-level log and mirrors events into a SQLite outbox (`agrichain_sync.db`) for durable retries. `SyncPlanner` orders by `prevHash` from the server head, drops already-stored ids, and refetches the head on `prev_mismatch` (up to 4 attempts per batch).
+- 2026-11-24 charan: T12 uses Nearby Connections `Strategy.P2P_CLUSTER` and the frozen v1 EVENTS envelope. Relayed events go straight into the T11 outbox; the outbox primary key is the dedupe. Clipboard copy/paste is the emulator fallback and does not change the envelope format.
 
 ## Blockers
 
@@ -207,6 +209,12 @@ cd android && ./gradlew installDebug
 # Farmer REGISTERs and box GPS/TAMPER events are queued locally and uploaded in chain
 # order. A 409 prev_mismatch refetches the head and retries; the log names rejects.
 
-# Unit tests (canonical event hash, QR codec, box GPS + tamper events, buyer history, barter, sync)
+# Mesh relay (T12)
+# Launcher → "Mesh relay" on two phones: "Start" on both, allow Bluetooth/Nearby access.
+# "Send queued events" broadcasts the outbox; the receiver queues new eventIds and relays.
+# Emulator fallback: "Copy queued envelope" on the box, paste it on the farmer phone and
+# tap "Relay pasted envelope", then "Ledger sync" → "Sync events".
+
+# Unit tests (canonical event hash, QR codec, box events, buyer history, barter, sync, mesh)
 cd android && ./gradlew testDebugUnitTest
 ```
