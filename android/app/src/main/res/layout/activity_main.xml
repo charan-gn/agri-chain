@@ -21,11 +21,28 @@
         android:text="@string/skeleton_subtitle"
         android:textAppearance="?attr/textAppearanceBodyMedium" />
 
+    <TextView
+        android:id="@+id/ledgerStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:text="Ledger: http://10.0.2.2:8000"
+        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/usbButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Use USB link"
+        style="@style/Widget.Material3.Button.OutlinedButton" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/farmerButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="48dp"
+        android:layout_marginTop="28dp"
         android:text="I am a farmer" />
 
     <com.google.android.material.button.MaterialButton

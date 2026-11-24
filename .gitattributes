@@ -1,0 +1,4 @@
+# Linux host scripts must keep LF even when checked out on Windows.
+*.sh text eol=lf
+Dockerfile text eol=lf
+deploy/*.Dockerfile text eol=lf
