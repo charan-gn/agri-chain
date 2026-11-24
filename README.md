@@ -24,7 +24,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T11 | Offline SQLite queue + sync | done | charan | task-T11-charan | APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/data/, README.md | T2, T4 |
 | T12 | Mesh relay (Nearby Connections) | done | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
 | T13 | Demo script + polish | done | charan | task-T13-charan | demo/, README.md | all |
-| T14 | SMS radio leg + relay v2 (replaces T12 scope) | claimed | charan | task-T14-charan | APP/mesh/, APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11, T12 |
+| T14 | SMS radio leg + relay v2 (replaces T12 scope) | done | charan | task-T14-charan | APP/mesh/, APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11, T12 |
 
 ## Contracts
 
@@ -128,6 +128,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 13:40] FROM charan → all: T12 done on task-T12-charan. Launcher → "Mesh relay": Nearby Connections (P2P_CLUSTER) advertises and discovers peers, relays the frozen v1 EVENTS envelope unchanged, and enqueues new events into the T11 SQLite outbox (dedupe by eventId). Emulator fallback: "Copy queued envelope" on one phone, paste and "Relay pasted envelope" on another; both paths feed the same queue. Tests: 36 Android (4 new), 27 ledger. T13 demo is next. | open
 - [2026-11-24 14:10] FROM charan → all: T13 done on task-T13-charan. `demo/seed.py` builds the whole story against a running ledger: 4 actors, 2 batches, box GPS + tamper, 2 priced transfers, a barter offer/accept and a price refresh. It prints the batch ids/QR payloads for the Buyer screen. Run `python3 demo/seed.py --base-url http://127.0.0.1:8000`. Next: SMS radio leg + relay rewrite (T14). | open
 - [2026-11-24 14:25] FROM charan → all: claiming T14 (replaces T12 scope). Nearby stays; add an SMS transport, a v2 compact envelope, one `Transport` interface, and relay v2 (persisted eventId dedupe, TTL forwarding, ACK cleanup, any internet node is a gateway). SMS only carries REGISTER/TRANSFER/TAMPER/DELIVER, chunked text messages to a configured gateway number. Contract above; no ledger changes needed (append is already idempotent by eventId). | open
+- [2026-11-24 15:20] FROM charan → all: T14 done on task-T14-charan. `Transport` is shared by Nearby, SMS and the HTTP gateway. SMS text chunks are `AC1|<msgId>|<idx>/<total>|<base64>`, drained every 2 s; the gateway receiver reassembles, stores, POSTs when online and sends an ACK back to the originating number. GPS never goes over SMS. The JVM simulator proves SMS-only A → online B → ledger, loss/reorder, multi-hop, duplicate suppression, ACK cleanup and TTL drop. Tests: 51 Android (15 new), 27 ledger. Real-phone SMS/Nearby still needs the manual 2-phone pass above. | open
 
 ## Decisions log
 
@@ -148,6 +149,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-24 charan: T12 uses Nearby Connections `Strategy.P2P_CLUSTER` and the frozen v1 EVENTS envelope. Relayed events go straight into the T11 outbox; the outbox primary key is the dedupe. Clipboard copy/paste is the emulator fallback and does not change the envelope format.
 - 2026-11-24 charan: T13 seeds the demo through the public REST API with fresh keys per run, so it never needs ledger internals. Batch ids are printed for the Buyer screen; phones still register their own actors.
 - 2026-11-24 charan: T14 replaces the v1 mesh envelope with compact v2 keys and a shared `Transport` interface. Nearby remains; SMS is the GSM radio leg (text messages, ≤140-char base64 chunks, gateway number in settings); internet is plain HTTP to the ledger. ACKs are relayed like events so any internet node can clear the mesh. The JVM simulator is the proof; phone tests are manual.
+- 2026-11-24 charan: SMS uses `AC1|<msgId>|<idx>/<total>|<base64>` with a 140-char payload (≤160-char SMS), 2 s between sends, and a persisted outbox so a dropped chunk is retried on the next broadcast. ACKs go to the inbound `originatingAddress`, not the configured gateway, and are not added to the seen-set (an ACK can arrive before its event).
 
 ## Blockers
 
@@ -231,6 +233,6 @@ cd android && ./gradlew installDebug
 python3 demo/seed.py --base-url http://127.0.0.1:8000
 # Prints batch A/B ids, the QR payload and the demo actors for the Buyer screen.
 
-# Unit tests (canonical event hash, QR codec, box events, buyer history, barter, sync, mesh)
+# Unit tests (canonical event hash, QR codec, box events, buyer history, barter, sync, mesh, SMS)
 cd android && ./gradlew testDebugUnitTest
 ```

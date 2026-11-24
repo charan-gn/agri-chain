@@ -15,19 +15,29 @@ import com.google.android.gms.nearby.connection.PayloadCallback
 import com.google.android.gms.nearby.connection.PayloadTransferUpdate
 import com.google.android.gms.nearby.connection.Strategy
 
-class NearbyMeshTransport(context: Context) : MeshTransport {
+/**
+ * Nearby Connections (Bluetooth / WiFi Direct) link. The relay forwards the same
+ * envelope it uses for SMS, so peers do not care which radio delivered it.
+ */
+class NearbyMeshTransport(
+    context: Context,
+    private val identity: String,
+) : Transport {
+
+    override val id: String = "nearby"
+    override val maxPayload: Int = 32_000
 
     private val client: ConnectionsClient = Nearby.getConnectionsClient(context)
     private val endpoints = mutableSetOf<String>()
-    private var identity = "agrichain"
-    private var onEnvelope: ((MeshEnvelope) -> Unit)? = null
+    private var running = false
+    private var onEnvelope: ((MeshEnvelope, Transport) -> Unit)? = null
     private var onLog: ((String) -> Unit)? = null
 
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             val bytes = payload.asBytes() ?: return
             val envelope = MeshEnvelope.parse(String(bytes, Charsets.UTF_8)) ?: return
-            onEnvelope?.invoke(envelope)
+            onEnvelope?.invoke(envelope, this@NearbyMeshTransport)
         }
 
         override fun onPayloadTransferUpdate(
@@ -66,14 +76,16 @@ class NearbyMeshTransport(context: Context) : MeshTransport {
         override fun onEndpointLost(endpointId: String) = Unit
     }
 
+    override fun available(): Boolean = running
+
     override fun start(
-        identity: String,
-        onEnvelope: (MeshEnvelope) -> Unit,
+        onReceive: (MeshEnvelope, Transport) -> Unit,
         onLog: (String) -> Unit,
     ) {
-        this.identity = identity
-        this.onEnvelope = onEnvelope
+        if (running) return
+        onEnvelope = onReceive
         this.onLog = onLog
+        running = true
 
         val strategy = Strategy.P2P_CLUSTER
         client.startAdvertising(
@@ -89,23 +101,32 @@ class NearbyMeshTransport(context: Context) : MeshTransport {
             discoveryCallback,
             DiscoveryOptions.Builder().setStrategy(strategy).build(),
         ).addOnFailureListener { onLog("discovery failed: ${it.message}") }
-        onLog("mesh started")
+        onLog("nearby started")
     }
 
     override fun stop() {
+        if (!running) return
+        running = false
         client.stopAdvertising()
         client.stopDiscovery()
         client.stopAllEndpoints()
-        endpoints.clear()
-        onLog?.invoke("mesh stopped")
+        synchronized(endpoints) { endpoints.clear() }
+        onLog?.invoke("nearby stopped")
     }
 
-    override fun broadcast(envelope: MeshEnvelope): Int {
-        if (endpoints.isEmpty()) return 0
-        val payload = Payload.fromBytes(envelope.encode().toByteArray(Charsets.UTF_8))
-        client.sendPayload(endpoints.toList(), payload)
-            .addOnFailureListener { onLog?.invoke("send failed: ${it.message}") }
-        return endpoints.size
+    override fun send(envelope: MeshEnvelope): Int {
+        if (!running) return 0
+        val peers = synchronized(endpoints) { endpoints.toList() }
+        if (peers.isEmpty()) return 0
+        return try {
+            val payload = Payload.fromBytes(envelope.encode().toByteArray(Charsets.UTF_8))
+            client.sendPayload(peers, payload)
+                .addOnFailureListener { onLog?.invoke("send failed: ${it.message}") }
+            peers.size
+        } catch (error: Exception) {
+            onLog?.invoke("send failed: ${error.message}")
+            0
+        }
     }
 
     companion object {

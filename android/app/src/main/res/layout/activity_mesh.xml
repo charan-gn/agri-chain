@@ -32,6 +32,12 @@
             android:textStyle="bold"
             android:textAppearance="?attr/textAppearanceBodyLarge" />
 
+        <TextView
+            android:id="@+id/transports"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -52,11 +58,32 @@
                 android:text="Stop" />
         </LinearLayout>
 
+        <EditText
+            android:id="@+id/gatewayNumberInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="Gateway phone (+91...)"
+            android:inputType="phone"
+            android:maxLines="1" />
+
+        <Button
+            android:id="@+id/saveGatewayButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Save gateway number" />
+
         <Button
             android:id="@+id/broadcastButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Send queued events" />
+
+        <Button
+            android:id="@+id/syncButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Sync to ledger now" />
 
         <Button
             android:id="@+id/copyButton"
@@ -68,7 +95,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Paste an envelope (demo fallback)"
+            android:text="Paste an envelope (emulator fallback)"
             android:textAppearance="?attr/textAppearanceTitleMedium" />
 
         <EditText
@@ -76,7 +103,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="top"
-            android:hint="{&quot;v&quot;:1,&quot;kind&quot;:&quot;EVENTS&quot;,…}"
+            android:hint="{&quot;v&quot;:2,&quot;k&quot;:&quot;E&quot;,…}"
             android:inputType="textMultiLine"
             android:minLines="3" />
 
