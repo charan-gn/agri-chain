@@ -24,6 +24,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T11 | Offline SQLite queue + sync | done | charan | task-T11-charan | APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/data/, README.md | T2, T4 |
 | T12 | Mesh relay (Nearby Connections) | done | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
 | T13 | Demo script + polish | done | charan | task-T13-charan | demo/, README.md | all |
+| T14 | SMS radio leg + relay v2 (replaces T12 scope) | claimed | charan | task-T14-charan | APP/mesh/, APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11, T12 |
 
 ## Contracts
 
@@ -100,9 +101,9 @@ BatchSummary:
 
 ### Mesh and QR
 
-Mesh envelope v1: `{"v":1,"kind":"EVENTS","senderId":"...","sentAt":ms,"events":[Event,...]}`. Receivers dedupe by `eventId`, relay unchanged, queue for the ledger. New kinds need a decision.
+One envelope, compact keys: `{"v":2,"k":"E","id":"<uuid>","s":"<senderId>","t":ms,"ttl":6,"ev":[...]}`. `k` is `E` (events) or `A` (ack, `"ack":[eventId,...]`). Event keys: `i` eventId, `b` batchId, `y` type, `a` actorId, `t` ts, `la` lat, `lo` lon, `d` data, `p` prevHash, `g` sig. `hash` is omitted; receivers recompute it. v1 envelopes still parse. Transports implement `Transport { id, available(), maxPayload, send(envelope), onReceive }`: Nearby (Bluetooth/WiFi Direct), SMS (GSM radio), Internet (HTTP to the ledger). SMS sends only `REGISTER`/`TRANSFER`/`TAMPER`/`DELIVER` (never GPS) as text SMS, base64 chunks ≤140 chars, `AC1|<msgId>|<idx>/<total>|<base64>`, to the gateway number in settings. Receivers reassemble before relaying.
 
-QR payload: `agri://batch/<batchId>`. Buyer scans → `GET /batches/{batchId}`.
+Relay rules: dedupe by `eventId` in the persisted `seen` set; any node with internet POSTs (ledger append is idempotent by `eventId`), broadcasts an ACK and marks acked events synced; without internet, queue in the SQLite outbox and forward on every available transport with `ttl-1`, dropping at 0. Retry when a transport or internet appears. No gateway election. QR payload: `agri://batch/<batchId>`.
 
 ## Inbox
 
@@ -126,6 +127,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 13:05] FROM charan → all: T11 done on task-T11-charan. Launcher → "Ledger sync": register farmer/buyer/box actors once, then upload local REGISTER/GPS/TAMPER events. A SQLite outbox (`agrichain_sync.db`) survives restarts; `SyncPlanner` walks prevHash from the server head, skips events already stored, uploads REGISTER batches first, and refetches the head on `409 prev_mismatch` before retrying. Tests: 32 Android (4 new), 27 ledger. T12 mesh is next. | open
 - [2026-11-24 13:40] FROM charan → all: T12 done on task-T12-charan. Launcher → "Mesh relay": Nearby Connections (P2P_CLUSTER) advertises and discovers peers, relays the frozen v1 EVENTS envelope unchanged, and enqueues new events into the T11 SQLite outbox (dedupe by eventId). Emulator fallback: "Copy queued envelope" on one phone, paste and "Relay pasted envelope" on another; both paths feed the same queue. Tests: 36 Android (4 new), 27 ledger. T13 demo is next. | open
 - [2026-11-24 14:10] FROM charan → all: T13 done on task-T13-charan. `demo/seed.py` builds the whole story against a running ledger: 4 actors, 2 batches, box GPS + tamper, 2 priced transfers, a barter offer/accept and a price refresh. It prints the batch ids/QR payloads for the Buyer screen. Run `python3 demo/seed.py --base-url http://127.0.0.1:8000`. Next: SMS radio leg + relay rewrite (T14). | open
+- [2026-11-24 14:25] FROM charan → all: claiming T14 (replaces T12 scope). Nearby stays; add an SMS transport, a v2 compact envelope, one `Transport` interface, and relay v2 (persisted eventId dedupe, TTL forwarding, ACK cleanup, any internet node is a gateway). SMS only carries REGISTER/TRANSFER/TAMPER/DELIVER, chunked text messages to a configured gateway number. Contract above; no ledger changes needed (append is already idempotent by eventId). | open
 
 ## Decisions log
 
@@ -145,6 +147,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-24 charan: T11 keeps `BatchStore` as the screen-level log and mirrors events into a SQLite outbox (`agrichain_sync.db`) for durable retries. `SyncPlanner` orders by `prevHash` from the server head, drops already-stored ids, and refetches the head on `prev_mismatch` (up to 4 attempts per batch).
 - 2026-11-24 charan: T12 uses Nearby Connections `Strategy.P2P_CLUSTER` and the frozen v1 EVENTS envelope. Relayed events go straight into the T11 outbox; the outbox primary key is the dedupe. Clipboard copy/paste is the emulator fallback and does not change the envelope format.
 - 2026-11-24 charan: T13 seeds the demo through the public REST API with fresh keys per run, so it never needs ledger internals. Batch ids are printed for the Buyer screen; phones still register their own actors.
+- 2026-11-24 charan: T14 replaces the v1 mesh envelope with compact v2 keys and a shared `Transport` interface. Nearby remains; SMS is the GSM radio leg (text messages, ≤140-char base64 chunks, gateway number in settings); internet is plain HTTP to the ledger. ACKs are relayed like events so any internet node can clear the mesh. The JVM simulator is the proof; phone tests are manual.
 
 ## Blockers
 
@@ -211,11 +214,17 @@ cd android && ./gradlew installDebug
 # Farmer REGISTERs and box GPS/TAMPER events are queued locally and uploaded in chain
 # order. A 409 prev_mismatch refetches the head and retries; the log names rejects.
 
-# Mesh relay (T12)
-# Launcher → "Mesh relay" on two phones: "Start" on both, allow Bluetooth/Nearby access.
-# "Send queued events" broadcasts the outbox; the receiver queues new eventIds and relays.
-# Emulator fallback: "Copy queued envelope" on the box, paste it on the farmer phone and
-# tap "Relay pasted envelope", then "Ledger sync" → "Sync events".
+# Mesh relay + SMS radio leg (T14)
+# Every phone: Launcher → "Mesh relay", save the gateway phone number, grant SMS + Nearby.
+# Radio-only phone: no ledger host needed; REGISTER/TRANSFER/TAMPER/DELIVER events are
+# chunked into text SMS to the gateway. GPS is never sent over SMS (Nearby/internet only).
+# Gateway phone: set the ledger host and keep it online; it reassembles chunks, POSTs to
+# the ledger (idempotent by eventId) and broadcasts ACK, which clears the sender's outbox.
+# Nearby works phone-to-phone with no SIM; the same outbox feeds every transport.
+# Manual 2-phone test: B (gateway) online + ledger host + Start; A radio-only registers a
+# batch, opens Mesh relay, sends; B logs "accepted N" and "uploaded N"; A pending → 0;
+# GET /batches/{id} shows the events. Send the same envelope twice: the ledger count must
+# not change. Emulator: copy/paste the envelope between Mesh relay screens.
 
 # Full demo seed (T13)
 # With the ledger running:
