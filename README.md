@@ -20,7 +20,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T7 | Box app: tamper triggers | done | Laasya | task-T7-laasya | APP/box/, android/app/src/main/res/layout/activity_box.xml | T6 |
 | T8 | Buyer history view (route, tamper flags) | done | charan | task-T8-charan | APP/buyer/, APP/net/, APP/ui/BuyerActivity.kt, APP/qr/ScanActivity.kt, android/app/src/main/res/layout/activity_{buyer,buyer_history}.xml, android/app/src/main/res/values/colors.xml, android/app/src/test/java/com/agrichain/buyer/, android/app/src/main/AndroidManifest.xml | T2, T3, T4 |
 | T9 | Mandi prices: API, cache, chart | done | Laasya | task-T9-laasya | ledger/prices.py, ledger/app.py, ledger/tests/test_prices.py, APP/prices/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,prices}.xml, android/app/src/main/AndroidManifest.xml | T4 |
-| T10 | Barter: offer / accept / swap | open | — | — | ledger/barter.py, APP/barter/ | T4, T5 |
+| T10 | Barter: offer / accept / swap | claimed | charan | task-T10-charan | ledger/barter.py, ledger/app.py, ledger/tests/, APP/barter/, APP/ui/FarmerActivity.kt, android/app/src/main/res/layout/activity_{farmer,barter}.xml, android/app/src/main/AndroidManifest.xml, README.md | T4, T5 |
 | T11 | Offline SQLite queue + sync | open | — | — | APP/data/ | T2, T4 |
 | T12 | Mesh relay (Nearby Connections) | open | — | — | APP/mesh/ | T11 |
 | T13 | Demo script + polish | open | — | — | demo/, README.md | all |
@@ -85,6 +85,8 @@ Chain rule: one linear chain per `batchId`; genesis `prevHash=""`. The server ap
 | `GET /prices?crop=<crop>&market=<market>` | market optional | `{"updatedAt":ms,"prices":[{"crop","market","pricePerKgPaise","source","ts"}]}` |
 | `POST /prices/refresh` | `{"crop"?,"market"?}` | same shape as `GET /prices` |
 | `GET /trades?crop=<crop>` | crop required | `{"crop","updatedAt":ms,"pricePerKgPaise":int\|null,"trades":[{"batchId","eventId","ts","tokens","pricePerKgPaise","fromActorId","toActorId"}]}` |
+| `GET /barter/offers?actorId=<id>&status=<s>` | both optional | `{"offers":[{"offerId","status","batchId","actorId","withActorId","giveKg","wantBatchId","wantKg","ts","acceptEventId"?,"cancelEventId"?}]}` newest first |
+| `GET /barter/offers/{offerId}` | — | one offer object as above |
 
 BatchSummary:
 
@@ -94,7 +96,7 @@ BatchSummary:
  "tamperCount":0,"lastHash":"<hex>","verified":true,"events":[]}
 ```
 
-`ownerId` = holder of the largest balance (ties: most recent transfer). A TRANSFER may not exceed the sender's balance; the ledger rejects it with `409 insufficient_balance`. Trade price is the token-weighted average of TRANSFER events that carry `pricePerKgPaise` for that crop (`null` with no trades). Barter detail endpoints are T10's to publish before anyone depends on them.
+`ownerId` = holder of the largest balance (ties: most recent transfer). A TRANSFER may not exceed the sender's balance; the ledger rejects it with `409 insufficient_balance`. Trade price is the token-weighted average of TRANSFER events that carry `pricePerKgPaise` for that crop (`null` with no trades). Barter is a two-party signed handshake posted through `POST /events`: an `offer` event on the giver's batch, then an `accept` event on the counterparty's batch (mirrored `giveKg`/`wantKg`, same `offerId`), or a `cancel` event by the offerer. An accepted pair swaps `giveKg` on the offer batch and `wantKg` on the want batch as a balance overlay (no TRANSFER events); balances, owner and later transfer checks include accepted swaps. `409` codes: `offer_not_open`, `offer_mismatch`, `not_counterparty`, `duplicate_offer`.
 
 ### Mesh and QR
 
@@ -119,6 +121,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 11:45] FROM Laasya → all: T9 Touches updated: the two `/prices` routes are an `APIRouter` in `ledger/prices.py` included with 2 lines in `ledger/app.py` (T4 is done), plus tests. On Android I need one launcher button and one manifest entry for the prices screen. T8 owns the manifest right now, so I will implement the rest first and rebase onto T8 before touching it; buyer files stay untouched. | done
 - [2026-11-24 11:51] FROM Laasya → all: T9 done on task-T9-laasya. `ledger/prices.py` seeds 11 crop/market rates (wheat, rice, maize, chilli, cotton across Telangana mandis), caches snapshots in SQLite and serves `GET /prices` + `POST /prices/refresh` via an APIRouter (2-line hook in `app.py`). Refresh walks ±2.5% deterministically per minute; `_next_price` is the swap point for a real Agmarknet feed. Android: launcher → "Mandi prices" (crop/market spinners, custom bar chart, SharedPreferences cache, offline fallback). Tests: 20 ledger (5 new) + 23 Android (5 new) pass. Also set `usesCleartextTraffic=true`: targetSdk 36 blocks plain `http://` to the local ledger, which would break both the box and prices on a device. T8/T13 can reuse `PriceRepository` or the API; contract unchanged. | open
 - [2026-11-24 11:58] FROM charan → all: T8 done on task-T8-charan. Buyer scan opens history: verified/tamper status, crop/grade, owner, token balances, last trade price, GPS route and reverse-chronological events. Buyer screen also takes a batch id manually and stores the ledger host (default `http://10.0.2.2:8000`). Last successful summary is cached per batch, so history opens offline; the trade-price line needs `/trades` online. Tests: 26 Android, 20 ledger. T10 is next. | open
+- [2026-11-24 12:05] FROM charan → all: claiming T10 (barter). Published above: offers/accepts/cancels are signed BARTER events via `POST /events`; accepts mirror the offer and swap balances on both batches as an overlay. Two new read-only endpoints under `/barter/offers`. No changes to existing event fields. | open
 
 ## Decisions log
 
