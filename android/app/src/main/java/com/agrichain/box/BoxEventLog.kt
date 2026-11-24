@@ -32,4 +32,21 @@ class BoxEventLog(context: Context, private val signer: Signer) {
         store.save(event)
         return event
     }
+
+    fun appendTamper(
+        batchId: String,
+        kind: String,
+        detail: String?,
+        baseHead: String,
+    ): Event {
+        val event = TamperEvents.create(
+            batchId = batchId,
+            signer = signer,
+            kind = kind,
+            detail = detail,
+            prevHash = head(batchId, baseHead),
+        )
+        store.save(event)
+        return event
+    }
 }

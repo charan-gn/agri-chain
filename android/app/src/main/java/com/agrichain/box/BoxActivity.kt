@@ -30,11 +30,17 @@ class BoxActivity : AppCompatActivity() {
     private lateinit var identity: ActorIdentity
     private lateinit var events: BoxEventLog
     private lateinit var gps: GpsRecorder
+    private lateinit var tamper: TamperDetector
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
 
     private var boundBatchId: String? = null
     private var ledgerHead: String = ""
     private var logging = false
+    private var tamperArmed = false
+    private var geofenceLat: Double? = null
+    private var geofenceLon: Double? = null
+    private var geofenceRadiusM = TamperRules.DEFAULT_GEOFENCE_RADIUS_M
+    private var geofenceBreached = false
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
         val contents = result.contents ?: return@registerForActivityResult
@@ -67,6 +73,7 @@ class BoxActivity : AppCompatActivity() {
         identity = ActorIdentity.loadOrCreate(this, "box")
         events = BoxEventLog(this, identity)
         gps = GpsRecorder(this) { location -> onFix(location) }
+        tamper = TamperDetector(this) { kind, detail -> onTamper(kind, detail) }
 
         binding.actorId.text = identity.actorId
         binding.pubKey.text = identity.publicKeySpkiBase64
@@ -85,12 +92,16 @@ class BoxActivity : AppCompatActivity() {
             if (logging) stopLogging() else ensurePermissionAndStart()
         }
         binding.fixNowButton.setOnClickListener { logCurrentFix() }
+        binding.tamperToggleButton.setOnClickListener { toggleTamper() }
+        binding.setGeofenceButton.setOnClickListener { setGeofenceHere() }
+        binding.simulateTamperButton.setOnClickListener { showSimulateTamper() }
 
         refreshUi()
     }
 
     override fun onDestroy() {
         gps.stop()
+        tamper.disarm()
         super.onDestroy()
     }
 
@@ -191,6 +202,13 @@ class BoxActivity : AppCompatActivity() {
             gps.stop()
             logging = false
         }
+        if (tamperArmed) {
+            tamper.disarm()
+            tamperArmed = false
+        }
+        geofenceLat = null
+        geofenceLon = null
+        geofenceBreached = false
         refreshUi()
         binding.bindStatus.text = "Bound ($mode). Ledger head: ${short(head)}"
         toast("Bound to batch ${batchId.take(8)}…")
@@ -266,9 +284,97 @@ class BoxActivity : AppCompatActivity() {
                 baseHead = ledgerHead,
             )
         }.onSuccess {
+            checkGeofence(location)
             refreshUi()
         }.onFailure {
             toast("Could not sign GPS event: ${it.message}")
+        }
+    }
+
+    private fun toggleTamper() {
+        if (boundBatchId == null) {
+            toast("Bind a batch first")
+            return
+        }
+        if (tamperArmed) {
+            tamper.disarm()
+            tamperArmed = false
+        } else {
+            tamper.arm()
+            tamperArmed = true
+        }
+        refreshUi()
+    }
+
+    private fun setGeofenceHere() {
+        if (boundBatchId == null) {
+            toast("Bind a batch first")
+            return
+        }
+        if (!hasLocationPermission()) {
+            toast("Location permission is required for the geofence")
+            return
+        }
+        val fix = gps.lastKnown()
+        if (fix == null) {
+            toast("No location fix yet — set a location or move near a window")
+            return
+        }
+        geofenceLat = fix.latitude
+        geofenceLon = fix.longitude
+        geofenceRadiusM = TamperRules.DEFAULT_GEOFENCE_RADIUS_M
+        geofenceBreached = false
+        refreshUi()
+        toast("Geofence set: ${geofenceRadiusM.toInt()} m around this fix")
+    }
+
+    private fun showSimulateTamper() {
+        if (boundBatchId == null) {
+            toast("Bind a batch first")
+            return
+        }
+        val kinds = arrayOf("movement", "light", "proximity", "geofence")
+        AlertDialog.Builder(this)
+            .setTitle("Simulate tamper")
+            .setItems(kinds) { _, which -> onTamper(kinds[which], "demo trigger") }
+            .show()
+    }
+
+    private fun onTamper(kind: String, detail: String) {
+        val batchId = boundBatchId ?: run {
+            toast("Bind a batch first")
+            return
+        }
+        runCatching {
+            events.appendTamper(batchId, kind, detail, ledgerHead)
+        }.onSuccess {
+            refreshUi()
+            toast("TAMPER logged: $kind")
+        }.onFailure {
+            toast("Could not sign tamper event: ${it.message}")
+        }
+    }
+
+    private fun checkGeofence(location: Location) {
+        if (!tamperArmed) return
+        val anchorLat = geofenceLat ?: return
+        val anchorLon = geofenceLon ?: return
+        val distance = TamperRules.distanceMeters(
+            anchorLat,
+            anchorLon,
+            location.latitude,
+            location.longitude,
+        )
+        if (distance > geofenceRadiusM) {
+            if (!geofenceBreached) {
+                geofenceBreached = true
+                onTamper(
+                    "geofence",
+                    "${distance.toInt()} m outside ${geofenceRadiusM.toInt()} m fence",
+                )
+            }
+        } else {
+            geofenceBreached = false
         }
     }
 
@@ -277,11 +383,17 @@ class BoxActivity : AppCompatActivity() {
         binding.toggleButton.isEnabled = batchId != null
         binding.fixNowButton.isEnabled = batchId != null
         binding.toggleButton.text = if (logging) "Stop logging" else "Start logging"
+        binding.tamperToggleButton.isEnabled = batchId != null
+        binding.setGeofenceButton.isEnabled = batchId != null
+        binding.simulateTamperButton.isEnabled = batchId != null
+        binding.tamperToggleButton.text =
+            if (tamperArmed) "Disarm tamper detection" else "Arm tamper detection"
 
         if (batchId == null) {
             binding.bindStatus.text = "Not bound. Scan the batch QR, then bind while online."
             binding.chainStatus.text = ""
             binding.fixStatus.text = "No batch bound."
+            binding.tamperStatus.text = "Not bound. Arm tamper detection after binding a batch."
             binding.eventLog.text = ""
             return
         }
@@ -289,6 +401,7 @@ class BoxActivity : AppCompatActivity() {
         val localHead = events.head(batchId, ledgerHead)
         val batchEvents = events.events(batchId)
         val gpsEvents = batchEvents.filter { it.type == "GPS" }
+        val tamperEvents = batchEvents.filter { it.type == "TAMPER" }
         val lastGps = gpsEvents.lastOrNull()
 
         binding.bindStatus.text = "Bound: $batchId"
@@ -300,9 +413,33 @@ class BoxActivity : AppCompatActivity() {
             "GPS fixes: ${gpsEvents.size}\nLast: ${lastGps.lat}, ${lastGps.lon} " +
                 "(±${lastGps.data["accuracyM"]} m)"
         }
+
+        val fenceLat = geofenceLat
+        val fenceLon = geofenceLon
+        binding.tamperStatus.text = buildString {
+            append("Sensors: ${tamper.sensorSummary()}")
+            append(if (tamperArmed) " · armed" else " · disarmed")
+            if (fenceLat != null && fenceLon != null) {
+                append("\nGeofence: ${geofenceRadiusM.toInt()} m around ")
+                append(GpsEvents.format(fenceLat))
+                append(", ")
+                append(GpsEvents.format(fenceLon))
+            } else {
+                append("\nGeofence: not set (uses the current fix when you tap the button)")
+            }
+            append("\nTamper events: ${tamperEvents.size}")
+        }
+
         binding.eventLog.text = batchEvents.takeLast(12).joinToString("\n") { event ->
             val time = timeFormat.format(Date(event.ts))
-            "$time ${event.type.padEnd(8)} ${event.lat ?: "—"},${event.lon ?: "—"}  #${event.hash.take(8)}"
+            val where = if (event.type == "TAMPER") {
+                val kind = event.data["kind"] ?: "?"
+                val detail = event.data["detail"]
+                if (detail == null) kind.toString() else "$kind ($detail)"
+            } else {
+                "${event.lat ?: "—"},${event.lon ?: "—"}"
+            }
+            "$time ${event.type.padEnd(8)} $where  #${event.hash.take(8)}"
         }.ifEmpty { "No events yet." }
     }
 

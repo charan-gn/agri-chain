@@ -160,6 +160,44 @@
             android:textAppearance="?attr/textAppearanceBodyMedium" />
 
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Tamper detection"
+            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+        <TextView
+            android:id="@+id/tamperStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tamperToggleButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:enabled="false"
+            android:text="Arm tamper detection" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/setGeofenceButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:enabled="false"
+            android:text="Set 200 m geofence here" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/simulateTamperButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:enabled="false"
+            android:text="Simulate tamper (demo)" />
+
+        <TextView
             android:id="@+id/eventLog"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
