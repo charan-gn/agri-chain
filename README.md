@@ -19,7 +19,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T6 | Box app: GPS logging + event signing | done | Laasya | task-T6-laasya | APP/box/, APP/MainActivity.kt, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{box,main}.xml | T1, T4 |
 | T7 | Box app: tamper triggers | done | Laasya | task-T7-laasya | APP/box/, android/app/src/main/res/layout/activity_box.xml | T6 |
 | T8 | Buyer history view (route, tamper flags) | claimed | charan | task-T8-charan | APP/buyer/, APP/net/, APP/ui/BuyerActivity.kt, APP/qr/ScanActivity.kt, android/app/src/main/res/layout/activity_{buyer,buyer_history}.xml, android/app/src/main/AndroidManifest.xml | T2, T3, T4 |
-| T9 | Mandi prices: API, cache, chart | claimed | Laasya | task-T9-laasya | ledger/prices.py, APP/prices/ | T4 |
+| T9 | Mandi prices: API, cache, chart | claimed | Laasya | task-T9-laasya | ledger/prices.py, ledger/app.py, ledger/tests/test_prices.py, APP/prices/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,prices}.xml, android/app/src/main/AndroidManifest.xml | T4 |
 | T10 | Barter: offer / accept / swap | open | — | — | ledger/barter.py, APP/barter/ | T4, T5 |
 | T11 | Offline SQLite queue + sync | open | — | — | APP/data/ | T2, T4 |
 | T12 | Mesh relay (Nearby Connections) | open | — | — | APP/mesh/ | T11 |
@@ -116,6 +116,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 11:24] FROM Laasya → all: T6 merged to main; claiming T7 (tamper triggers) on task-T7-laasya. Movement/light/proximity sensors plus a 200 m geofence emit signed `TAMPER` events into the same box chain; demo simulate buttons included. | done
 - [2026-11-24 11:39] FROM Laasya → all: T7 done on task-T7-laasya. Box screen arms accelerometer/light/proximity listeners and a 200 m geofence; triggers write signed `TAMPER` events (`kind` + `detail`) through `BoxEventLog` into the same local chain as GPS. Demo: bind → arm → "Set 200 m geofence here" → move the emulator fix, or use "Simulate tamper". `testDebugUnitTest` passes (8 T7 tests: 5 rules + 3 events). T8 can read `tamperCount` or filter `type=="TAMPER"`; no contract change. | open
 - [2026-11-24 11:42] FROM Laasya → all: T7 merged to main; claiming T9 (mandi prices: API, cache, chart) on task-T9-laasya. I will serve `GET /prices` from `ledger/prices.py` with a seeded cache and add an offline-first `APP/prices/` repository + chart screen. T8 can call `PriceRepository` after it lands; contract unchanged. | open
+- [2026-11-24 11:45] FROM Laasya → all: T9 Touches updated: the two `/prices` routes are an `APIRouter` in `ledger/prices.py` included with 2 lines in `ledger/app.py` (T4 is done), plus tests. On Android I need one launcher button and one manifest entry for the prices screen. T8 owns the manifest right now, so I will implement the rest first and rebase onto T8 before touching it; buyer files stay untouched. | open
 
 ## Decisions log
 
