@@ -17,7 +17,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T4 | Ledger node: hash-chained log + REST API | done | charan | task-T4-charan | ledger/ | T1 |
 | T5 | Token mint/transfer + price from trades | done | charan | task-T5-charan | ledger/tokens.py, ledger/app.py, ledger/db.py, ledger/tests/, README.md | T4 |
 | T6 | Box app: GPS logging + event signing | done | Laasya | task-T6-laasya | APP/box/, APP/MainActivity.kt, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{box,main}.xml | T1, T4 |
-| T7 | Box app: tamper triggers | open | — | — | APP/box/ | T6 |
+| T7 | Box app: tamper triggers | claimed | Laasya | task-T7-laasya | APP/box/, android/app/src/main/res/layout/activity_box.xml | T6 |
 | T8 | Buyer history view (route, tamper flags) | claimed | charan | task-T8-charan | APP/buyer/, APP/net/, APP/ui/BuyerActivity.kt, APP/qr/ScanActivity.kt, android/app/src/main/res/layout/activity_{buyer,buyer_history}.xml, android/app/src/main/AndroidManifest.xml | T2, T3, T4 |
 | T9 | Mandi prices: API, cache, chart | open | — | — | ledger/prices.py, APP/prices/ | T4 |
 | T10 | Barter: offer / accept / swap | open | — | — | ledger/barter.py, APP/barter/ | T4, T5 |
@@ -112,7 +112,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 00:26] FROM Laasya → all: charan claimed T4 before my claim push, so I am claiming T6 (box GPS + signing) on task-T6-laasya. I will reuse APP/core Event/ActorIdentity and build against the ledger contract while T4 is in progress. | done
 - [2026-11-24 00:55] FROM charan → all: T4 done. Ledger runs from `ledger/`; all endpoints above are live and tested. Actors must be registered via `POST /actors` (no Android registration UI yet). T5 is next. | open
 - [2026-11-24 01:05] FROM charan → all: T5 done. `TRANSFER` checks sender balance; `GET /trades?crop=` returns token-weighted trade price. Reuse `ledger/tokens.py` for T10 swaps; T8 can show balances and price. | open
-- [2026-11-24 11:22] FROM Laasya → all: T6 done on task-T6-laasya. Box mode has actor registration, QR bind via `GET /batches/{id}`, GPS every 3 s signed as `GPS` events with hash chaining into `BatchStore`, online head fetch + offline fallback. `testDebugUnitTest` passes (5 T6 tests + T2 tests) on JDK 17/SDK 36. T11: keep `BatchStore.all()/save()` or migrate `BoxEventLog`; T7 can extend `APP/box/` for tamper events. | open
+- [2026-11-24 11:22] FROM Laasya → all: T6 done on task-T6-laasya. Box mode has actor registration, QR bind via `GET /batches/{id}`, GPS every 3 s signed as `GPS` events with hash chaining into `BatchStore`, online head fetch + offline fallback. `testDebugUnitTest` passes (5 T6 tests + T2 tests) on JDK 17/SDK 36. T11: keep `BatchStore.all()/save()` or migrate `BoxEventLog`; T7 can extend `APP/box/` for tamper events. | done
+- [2026-11-24 11:24] FROM Laasya → all: T6 merged to main; claiming T7 (tamper triggers) on task-T7-laasya. Movement/light/proximity sensors plus a 200 m geofence emit signed `TAMPER` events into the same box chain; demo simulate buttons included. | open
 
 ## Decisions log
 
