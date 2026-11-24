@@ -23,7 +23,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T10 | Barter: offer / accept / swap | done | charan | task-T10-charan | ledger/barter.py, ledger/app.py, ledger/tests/, APP/barter/, APP/ui/FarmerActivity.kt, android/app/src/main/res/layout/activity_{farmer,barter}.xml, android/app/src/main/AndroidManifest.xml, README.md | T4, T5 |
 | T11 | Offline SQLite queue + sync | done | charan | task-T11-charan | APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/data/, README.md | T2, T4 |
 | T12 | Mesh relay (Nearby Connections) | done | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
-| T13 | Demo script + polish | open | — | — | demo/, README.md | all |
+| T13 | Demo script + polish | claimed | charan | task-T13-charan | demo/, README.md | all |
 
 ## Contracts
 
