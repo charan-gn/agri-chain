@@ -38,7 +38,7 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T24 | Docs + demo + final device pass | done | charan | task-T22-charan | README.md, demo/, scripts/ | all |
 | T25 | Meshtastic LoRa transport | done | charan | task-T25-charan | android/app/src/main/java/com/agrichain/mesh/MeshtasticCodec.kt, android/app/src/main/java/com/agrichain/mesh/MeshtasticTransport.kt, android/app/src/test/java/com/agrichain/mesh/MeshtasticCodecTest.kt, AndroidManifest.xml | T14, T21 |
 | T26 | BLE chat mesh + chat-first launcher | done | charan | task-T26-ble-mesh | APP/MainActivity.kt, APP/mesh/BleMeshCodec.kt, APP/mesh/BleMeshTransport.kt, APP/mesh/MeshEnvelope.kt, APP/mesh/RelayEngine.kt, APP/mesh/MeshRuntime.kt, APP/mesh/Transport.kt, APP/data/ChatStore.kt, APP/core/Permissions.kt, android/app/src/main/res/layout/activity_main.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T14, T21 |
-| T27 | Public web viewer + deploy | claimed | charan | task-T27-webapp-charan | webapp/, deploy/, README.md | T18, T19 |
+| T27 | Public web viewer + deploy | done | charan | task-T27-webapp-charan | webapp/, deploy/, README.md | T18, T19 |
 
 ## Contracts
 
@@ -102,6 +102,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-25 22:10] FROM charan → all: T25 is merged on main (`44b083b`): Meshtastic MC1 codec, transport and JVM tests. D10 stays pending until two 865-867 MHz boards are available. | done
 
 - [2026-11-25 22:20] FROM charan → all: claiming T27 (public web viewer + deploy) on task-T27-webapp-charan. Reviving Sresta's read-only dashboard/buyer-trace UI, replacing the removed `/prices` proxy with v2 `/trades` (median20), and keeping only the Docker/host deploy files. The redundant USB presets are skipped because T15/T16 already cover USB. | open
+- [2026-11-25 22:30] FROM charan → all: T27 done on task-T27-webapp-charan. `webapp/` is a read-only dashboard + buyer trace (`/trace`) proxying `/api/batches`, `/api/offers` and `/api/trades?crop=…` (median20); the removed `/prices` and `/prices/refresh` proxies are gone. `deploy/` adds Linux/WSL and PowerShell hosts plus Docker Compose; the redundant USB presets were dropped. Evidence: `webapp/tests` 5 pass; live smoke on a temp v2 ledger returned health v2, 2 batches, wheat `2500` paise/kg sample 2, 1 offer, trace page 200, `/api/prices` 404. | done
 
 ## Decisions log
 
@@ -267,6 +268,15 @@ python3 ledger/mirror.py --primary http://127.0.0.1:8000 --secondary http://127.
 # Device-only checks are D1–D9 in “Device test checklist”. They stay pending until a phone
 # is attached; never mark them done without quoting adb/logcat output.
 ```
+
+### Optional public web viewer (T27)
+
+```bash
+./deploy/serve-linux.sh          # ledger :8000 + viewer :8080
+docker compose -f deploy/docker-compose.yml up --build   # or Docker
+```
+
+Read-only dashboard + buyer trace at `http://<host>:8080/trace`; it proxies `/api/batches`, `/api/offers` and `/api/trades` (median20) and never writes events. The redundant USB presets were dropped because `tools/phone.sh` covers USB.
 
 ### Production runbook (M9 TLS & M10 privacy)
 

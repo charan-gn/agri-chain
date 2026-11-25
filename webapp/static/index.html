@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgriChain — live produce ledger</title>
+  <meta name="description" content="AgriChain public dashboard and buyer batch trace.">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">AC</div>
+      <div>
+        <h1>AgriChain</h1>
+        <p>Offline-first produce ledger</p>
+      </div>
+    </div>
+    <nav class="tabs" aria-label="Views">
+      <button class="tab is-active" data-view="dashboard">Dashboard</button>
+      <button class="tab" data-view="trace">Buyer trace</button>
+    </nav>
+    <div class="status">
+      <span id="ledger-dot" class="dot" title="Ledger status"></span>
+      <span id="ledger-status">Connecting…</span>
+      <button id="refresh" class="btn btn-ghost" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="view-dashboard" class="view">
+      <div class="kpis" id="kpis">
+        <article class="kpi"><span>Batches</span><strong id="kpi-batches">—</strong></article>
+        <article class="kpi"><span>Ledger events</span><strong id="kpi-events">—</strong></article>
+        <article class="kpi warn"><span>Tamper flags</span><strong id="kpi-tamper">—</strong></article>
+        <article class="kpi"><span>Open barters</span><strong id="kpi-offers">—</strong></article>
+        <article class="kpi"><span>Wheat token price</span><strong id="kpi-price">—</strong></article>
+      </div>
+
+      <div class="dashboard-grid">
+        <section class="panel batches-panel">
+          <div class="panel-head">
+            <h2>Batches</h2>
+            <span id="batch-count" class="muted">0 tracked</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="batch-table">
+              <thead>
+                <tr><th>Crop</th><th>Owner</th><th>kg</th><th>Tamper</th><th>State</th></tr>
+              </thead>
+              <tbody id="batch-rows">
+                <tr><td colspan="5" class="empty">Waiting for ledger data…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel detail-panel" id="dashboard-detail">
+          <div class="empty tall">Select a batch to inspect its route and history.</div>
+        </section>
+
+        <aside class="side">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Reported token price</h2>
+            </div>
+            <div id="price-list" class="price-list"><p class="empty">Loading…</p></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Barter board</h2>
+              <span id="offer-count" class="muted">0 offers</span>
+            </div>
+            <div id="offer-list" class="offer-list"><p class="empty">Loading…</p></div>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <section id="view-trace" class="view" hidden>
+      <section class="panel trace-search">
+        <h2>Trace a batch</h2>
+        <p class="muted">Scan the QR on the crate or paste the batch id. Payload format <code>agri://batch/&lt;id&gt;</code>.</p>
+        <form id="trace-form" class="search-row">
+          <input id="trace-input" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="agri://batch/…  or  batch uuid" aria-label="Batch id">
+          <button class="btn" type="submit">Trace</button>
+        </form>
+        <p id="trace-error" class="error" role="alert" hidden></p>
+      </section>
+      <section class="panel detail-panel" id="trace-detail">
+        <div class="empty tall">No batch loaded yet.</div>
+      </section>
+    </section>
+  </main>
+
+  <footer>
+    <span>AgriChain demo</span>
+    <span id="footer-ledger">Ledger: —</span>
+    <span id="footer-updated">Updated: —</span>
+  </footer>
+
+  <template id="batch-detail-template">
+    <div class="detail-head">
+      <div>
+        <p class="eyebrow" data-field="batch-id"></p>
+        <h2 data-field="title"></h2>
+        <p class="muted" data-field="subtitle"></p>
+      </div>
+      <div class="verify" data-field="verified"></div>
+    </div>
+
+    <div class="tamper-banner" data-field="tamper-banner" hidden></div>
+
+    <div class="detail-stats">
+      <div><span>Initial</span><strong data-field="initial"></strong></div>
+      <div><span>Owner</span><strong data-field="owner"></strong></div>
+      <div><span>Balances</span><strong data-field="balances"></strong></div>
+      <div><span>Last hash</span><strong class="mono" data-field="hash"></strong></div>
+    </div>
+
+    <div class="route-wrap">
+      <div class="panel-head">
+        <h3>Transport route</h3>
+        <span class="muted" data-field="route-note"></span>
+      </div>
+      <div data-field="route"></div>
+    </div>
+
+    <div class="history">
+      <div class="panel-head"><h3>Event history</h3><span class="muted" data-field="event-count"></span></div>
+      <ol class="timeline" data-field="timeline"></ol>
+    </div>
+  </template>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>
