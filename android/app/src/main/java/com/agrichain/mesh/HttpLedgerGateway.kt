@@ -58,7 +58,12 @@ class HttpLedgerGateway(context: Context) : LedgerGateway {
             var ids = server?.eventIds ?: emptySet()
 
             group.filter { it.eventId in ids }.forEach { accepted += it.eventId }
-            for (event in SyncPlanner.orderV2(group, ids, chainHeads)) {
+            val plan = SyncPlanner.planV2(group, ids, chainHeads)
+            if (plan.orphans.isNotEmpty()) {
+                rejected += plan.orphans.map { it.eventId }
+                error = "prev_mismatch: ${plan.orphans.size} event(s) need re-signing"
+            }
+            for (event in plan.ordered) {
                 if (event.eventId in ids) {
                     accepted += event.eventId
                     continue
@@ -90,6 +95,8 @@ class HttpLedgerGateway(context: Context) : LedgerGateway {
                     ids = ids + event.eventId
                     accepted += event.eventId
                 } catch (failure: LedgerException) {
+                    // Rejects stay in the outbox; unbound_box/batch_unknown are
+                    // retried once the BIND/REGISTER arrives through the mesh.
                     rejected += event.eventId
                     error = "${failure.code}: ${failure.detail}"
                     if (failure.status == 409 && failure.head != null) {

@@ -12,9 +12,16 @@ class LedgerSync(private val context: Context, private val api: LedgerApi) {
     private val store = SyncStore(context)
 
     fun registerActors(log: (String) -> Unit) {
+        val adminToken = com.agrichain.net.LedgerSettings.adminToken(context)
         for (role in listOf("farmer", "buyer", "box")) {
             val identity = ActorIdentity.loadOrCreate(context, role)
-            api.registerActor(identity.actorId, nameFor(role), role, identity.publicKeySpkiBase64)
+            api.registerActor(
+                identity.actorId,
+                nameFor(role),
+                role,
+                identity.publicKeySpkiBase64,
+                adminToken = adminToken,
+            )
             log("$role ${identity.actorId.take(13)}… ok")
         }
     }
@@ -47,14 +54,20 @@ class LedgerSync(private val context: Context, private val api: LedgerApi) {
             var done = false
 
             while (!done && attempts < 4) {
-                val plan = SyncPlanner.orderV2(events, ids, chainHeads)
-                if (plan.isEmpty()) {
+                val plan = SyncPlanner.planV2(events, ids, chainHeads)
+                if (plan.orphans.isNotEmpty()) {
+                    log(
+                        "${batchId.take(8)}: ${plan.orphans.size} event(s) do not extend " +
+                            "their chain — re-sign them (new eventId/ts/prevHash)"
+                    )
+                }
+                if (plan.ordered.isEmpty()) {
                     done = true
                     break
                 }
                 attempts++
                 var retry = false
-                for (event in plan) {
+                for (event in plan.ordered) {
                     val chainKey = event.actorId to SyncPlanner.streamFor(event.type)
                     try {
                         val newHead = api.postEvent(event)
@@ -63,7 +76,9 @@ class LedgerSync(private val context: Context, private val api: LedgerApi) {
                         store.markSynced(listOf(event.eventId))
                         uploaded++
                     } catch (error: LedgerException) {
-                        if (error.status == 409 && error.code == "prev_mismatch") {
+                        if (error.status == 409 && error.code in RETRYABLE_409) {
+                            // unbound_box waits for the BIND relay; batch_unknown waits
+                            // for REGISTER. Both are retryable, never dropped.
                             retry = true
                             break
                         } else {
@@ -82,10 +97,11 @@ class LedgerSync(private val context: Context, private val api: LedgerApi) {
                 }
                 if (done) break
                 if (retry) {
+                    Thread.sleep(800)
                     val refreshed = api.fetchBatch(batchId)
                     ids = refreshed?.eventIds ?: ids
                     chainHeads = refreshed?.chainHeads?.toMutableMap() ?: chainHeads
-                    log("${batchId.take(8)}: head moved, retrying")
+                    log("${batchId.take(8)}: retryable 409, refreshing heads")
                 } else {
                     done = true
                 }
@@ -101,5 +117,9 @@ class LedgerSync(private val context: Context, private val api: LedgerApi) {
         "farmer" -> "Farmer"
         "buyer" -> "Buyer"
         else -> "Transport box"
+    }
+
+    private companion object {
+        val RETRYABLE_409 = setOf("prev_mismatch", "unbound_box", "batch_unknown")
     }
 }

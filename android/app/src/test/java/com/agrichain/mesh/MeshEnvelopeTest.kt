@@ -85,21 +85,37 @@ class MeshEnvelopeTest {
     }
 
     @Test
-    fun `ack envelopes round trip`() {
-        val ack = MeshEnvelope.ack("phone-b", listOf("e1", "e2"))
+    fun `signed ack envelopes round trip and verify`() {
+        val ack = MeshEnvelope.ack("phone-b", listOf("e1", "e2"), TestSigners.create("mesh:B"))
 
         val parsed = MeshEnvelope.parse(ack.encode())
 
         assertEquals(MeshKind.ACK, parsed?.kind)
         assertEquals(listOf("e1", "e2"), parsed?.ackedEventIds)
         assertTrue(parsed?.events?.isEmpty() == true)
+        assertTrue(parsed?.verifyAck() == true)
+    }
+
+    @Test
+    fun `unsigned ack does not verify`() {
+        val ack = MeshEnvelope.ack("phone-b", listOf("e1"))
+
+        assertTrue(MeshEnvelope.parse(ack.encode())?.verifyAck() == false)
+    }
+
+    @Test
+    fun `tampered ack payload does not verify`() {
+        val ack = MeshEnvelope.ack("phone-b", listOf("e1"), TestSigners.create("mesh:B"))
+        val json = ack.toJson().put("ack", JSONArray().put("e2"))
+
+        assertTrue(MeshEnvelope.fromJson(json)?.verifyAck() == false)
     }
 
     @Test
     fun `rejects wrong version kind and empty bodies`() {
         val json = MeshEnvelope.events("phone-a", listOf(register())).toJson()
 
-        assertNull(MeshEnvelope.fromJson(JSONObject(json.toString()).put("v", 3)))
+        assertNull(MeshEnvelope.fromJson(JSONObject(json.toString()).put("v", 4)))
         assertNull(MeshEnvelope.fromJson(JSONObject(json.toString()).put("k", "X")))
         assertNull(
             MeshEnvelope.fromJson(

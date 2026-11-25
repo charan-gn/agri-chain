@@ -29,6 +29,7 @@ class NearbyMeshTransport(
 
     private val client: ConnectionsClient = Nearby.getConnectionsClient(context)
     private val endpoints = mutableSetOf<String>()
+    private val endpointNames = mutableMapOf<String, String>()
     private var running = false
     private var onEnvelope: ((MeshEnvelope, Transport) -> Unit)? = null
     private var onLog: ((String) -> Unit)? = null
@@ -48,6 +49,7 @@ class NearbyMeshTransport(
 
     private val connectionCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
+            synchronized(endpointNames) { endpointNames[endpointId] = info.endpointName }
             client.acceptConnection(endpointId, payloadCallback)
             onLog?.invoke("connecting to ${info.endpointName}")
         }
@@ -63,6 +65,7 @@ class NearbyMeshTransport(
 
         override fun onDisconnected(endpointId: String) {
             endpoints -= endpointId
+            synchronized(endpointNames) { endpointNames.remove(endpointId) }
             onLog?.invoke("disconnected (${endpoints.size} peer(s))")
         }
     }
@@ -111,7 +114,15 @@ class NearbyMeshTransport(
         client.stopDiscovery()
         client.stopAllEndpoints()
         synchronized(endpoints) { endpoints.clear() }
+        synchronized(endpointNames) { endpointNames.clear() }
         onLog?.invoke("nearby stopped")
+    }
+
+    override fun peers(envelope: MeshEnvelope): Set<String> {
+        val ids = synchronized(endpoints) { endpoints.toList() }
+        return synchronized(endpointNames) {
+            ids.mapNotNull { endpointNames[it] }.toSet()
+        }
     }
 
     override fun send(envelope: MeshEnvelope): Int {

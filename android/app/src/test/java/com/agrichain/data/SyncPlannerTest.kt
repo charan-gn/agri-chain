@@ -53,13 +53,16 @@ class SyncPlannerTest {
     }
 
     @Test
-    fun `falls back to timestamp for events that do not chain`() {
+    fun `events that do not chain are returned as orphans`() {
         val late = event("GPS", "missing-a", "a", 3)
         val early = event("GPS", "missing-b", "b", 1)
 
-        val ordered = SyncPlanner.order(listOf(late, early), emptySet(), "unknown-head")
+        val plan = SyncPlanner.planChain(listOf(late, early), "unknown-head")
 
-        assertEquals(listOf("b", "a"), ordered.map { it.hash })
+        // v2 never mutates a signed event, so the gap blocks the chain and both
+        // events are reported for re-signing instead of being uploaded out of order.
+        assertEquals(emptyList<Event>(), plan.ordered)
+        assertEquals(listOf("b", "a"), plan.orphans.map { it.hash })
     }
 
     @Test

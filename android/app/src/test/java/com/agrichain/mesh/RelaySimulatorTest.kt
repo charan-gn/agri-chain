@@ -1,6 +1,7 @@
 package com.agrichain.mesh
 
 import com.agrichain.core.Event
+import com.agrichain.core.PublicKeySigner
 import com.agrichain.core.Signer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -55,6 +56,9 @@ class RelaySimulatorTest {
         val seen = mutableSetOf<String>()
         val synced = mutableSetOf<String>()
         val seenEnvelopes = mutableSetOf<String>()
+        val sentTo = mutableMapOf<String, MutableSet<String>>()
+        val acked = mutableMapOf<String, MutableSet<String>>()
+        val ackKeys = mutableMapOf<String, String>()
 
         override fun hasSeen(eventId: String) = eventId in seen
         override fun markSeen(eventIds: Collection<String>) {
@@ -76,6 +80,24 @@ class RelaySimulatorTest {
         override fun hasSeenEnvelope(envelopeId: String) = envelopeId in seenEnvelopes
         override fun markSeenEnvelope(envelopeId: String) {
             seenEnvelopes += envelopeId
+        }
+
+        override fun markSentTo(peerId: String, eventIds: Collection<String>) {
+            sentTo.getOrPut(peerId) { mutableSetOf() } += eventIds
+        }
+
+        override fun sentTo(peerId: String): Set<String> = sentTo[peerId].orEmpty()
+
+        override fun markAcked(peerId: String, eventIds: Collection<String>) {
+            acked.getOrPut(peerId) { mutableSetOf() } += eventIds
+        }
+
+        override fun acked(peerId: String): Set<String> = acked[peerId].orEmpty()
+
+        override fun ackKey(signerId: String): String? = ackKeys[signerId]
+
+        override fun rememberAckKey(signerId: String, publicKeySpkiBase64: String) {
+            ackKeys.putIfAbsent(signerId, publicKeySpkiBase64)
         }
     }
 
@@ -131,6 +153,8 @@ class RelaySimulatorTest {
         val numbers = mutableMapOf<String, String>()
         val nodeByNumber = mutableMapOf<String, String>()
         private val links = mutableMapOf<String, MutableSet<String>>()
+
+        fun linksOf(node: String): Set<String> = links[node].orEmpty()
         private val inboxes = mutableMapOf<String, SmsReassembler>()
         private val radioQueue = ArrayDeque<Radio>()
         private val smsQueue = ArrayDeque<Sms>()
@@ -180,7 +204,8 @@ class RelaySimulatorTest {
                 clock++
                 if (radioQueue.isNotEmpty()) {
                     val next = radioQueue.removeFirst()
-                    engines.getValue(next.to).receive(next.envelope)
+                    engines.getValue(next.to)
+                        .receive(next.envelope, transports.getValue(next.to).id, next.from)
                     continue
                 }
                 val due = smsQueue.filter { it.deliverAt <= clock }
@@ -193,7 +218,11 @@ class RelaySimulatorTest {
                     if (envelope.kind == MeshKind.EVENTS) {
                         smsTransports[sms.to]?.replyTo = numbers[sms.from]
                     }
-                    engines.getValue(sms.to).receive(envelope)
+                    engines.getValue(sms.to).receive(
+                        envelope,
+                        transports.getValue(sms.to).id,
+                        numbers[sms.from],
+                    )
                 }
             }
             check(steps < maxSteps) { "simulation did not settle" }
@@ -209,6 +238,7 @@ class RelaySimulatorTest {
         override fun available() = true
         override fun start(onReceive: (MeshEnvelope, Transport) -> Unit, onLog: (String) -> Unit) = Unit
         override fun stop() = Unit
+        override fun peers(envelope: MeshEnvelope): Set<String> = network.linksOf(node)
         override fun send(envelope: MeshEnvelope): Int {
             network.radioSend(node, envelope)
             return 1
@@ -228,6 +258,18 @@ class RelaySimulatorTest {
         override fun available() = gateway != null || replyTo != null
         override fun start(onReceive: (MeshEnvelope, Transport) -> Unit, onLog: (String) -> Unit) = Unit
         override fun stop() = Unit
+
+        override fun peers(envelope: MeshEnvelope): Set<String> {
+            val destination = if (envelope.kind == MeshKind.ACK) {
+                replyTo ?: gateway
+            } else {
+                gateway
+            } ?: return emptySet()
+            return setOf(normalizePeerId(destination))
+        }
+
+        override fun carriedEventIds(envelope: MeshEnvelope): Set<String> =
+            SmsPolicy.filter(envelope).events.mapTo(mutableSetOf()) { it.eventId }
 
         override fun send(envelope: MeshEnvelope): Int {
             val filtered = SmsPolicy.filter(envelope).let { filtered ->
@@ -253,10 +295,17 @@ class RelaySimulatorTest {
         network: SimNetwork,
         name: String,
         ledger: FakeLedger? = null,
+        signer: PublicKeySigner? = null,
     ): Pair<RelayEngine, SimStore> {
         val store = SimStore()
         val transport = SimRadio(name, network)
-        val engine = RelayEngine(name, store, ledger, mutableListOf(transport))
+        val engine = RelayEngine(
+            name,
+            store,
+            ledger,
+            mutableListOf(transport),
+            signer = signer,
+        )
         network.add(name, engine, store, transport)
         return engine to store
     }
@@ -273,7 +322,13 @@ class RelaySimulatorTest {
 
         val storeB = SimStore()
         val smsB = SimSmsTransport("B", network, null)
-        val engineB = RelayEngine("B", storeB, ledger, mutableListOf(smsB))
+        val engineB = RelayEngine(
+            "B",
+            storeB,
+            ledger,
+            mutableListOf(smsB),
+            signer = TestSigners.create("mesh:B"),
+        )
         network.add("B", engineB, storeB, smsB)
         network.addSms("B", "+910000000002", smsB)
 
@@ -323,7 +378,13 @@ class RelaySimulatorTest {
 
         val storeB = SimStore()
         val smsB = SimSmsTransport("B", network, null)
-        val engineB = RelayEngine("B", storeB, ledger, mutableListOf(smsB))
+        val engineB = RelayEngine(
+            "B",
+            storeB,
+            ledger,
+            mutableListOf(smsB),
+            signer = TestSigners.create("mesh:B"),
+        )
         network.add("B", engineB, storeB, smsB)
         network.addSms("B", "+910000000002", smsB)
 
@@ -354,7 +415,12 @@ class RelaySimulatorTest {
         val ledger = FakeLedger()
         val (engineA, storeA) = radioNode(network, "A")
         val (engineB, storeB) = radioNode(network, "B")
-        val (engineC, storeC) = radioNode(network, "C", ledger)
+        val (engineC, storeC) = radioNode(
+            network,
+            "C",
+            ledger,
+            TestSigners.create("mesh:C"),
+        )
         network.connectRadio("A", "B")
         network.connectRadio("B", "C")
 
@@ -377,11 +443,17 @@ class RelaySimulatorTest {
 
         val storeA = SimStore()
         val engineA = RelayEngine("A", storeA, null, mutableListOf(loraA))
-        loraA.start({ env, _ -> engineA.receive(env) }, {})
+        loraA.start({ env, via -> engineA.receive(env, via.id, via.id) }, {})
 
         val storeB = SimStore()
-        val engineB = RelayEngine("B", storeB, ledger, mutableListOf(loraB))
-        loraB.start({ env, _ -> engineB.receive(env) }, {})
+        val engineB = RelayEngine(
+            "B",
+            storeB,
+            ledger,
+            mutableListOf(loraB),
+            signer = TestSigners.create("mesh:B"),
+        )
+        loraB.start({ env, via -> engineB.receive(env, via.id, via.id) }, {})
 
         events().forEach { storeA.enqueue(it) }
         engineA.broadcastPending()
@@ -399,14 +471,17 @@ class RelaySimulatorTest {
     fun `duplicate envelopes do not double append or storm acks`() {
         val network = SimNetwork()
         val ledger = FakeLedger()
+        val signer = TestSigners.create("mesh:C")
         val (engineA, storeA) = radioNode(network, "A")
         val (engineB, _) = radioNode(network, "B")
-        radioNode(network, "C", ledger)
+        radioNode(network, "C", ledger, signer)
         network.connectRadio("A", "B")
         network.connectRadio("B", "C")
 
         events().forEach { storeA.enqueue(it) }
         val envelope = MeshEnvelope.events("A", storeA.pending())
+        // send() is what records sentTo; the test drives the radio directly.
+        storeA.markSentTo("B", envelope.events.map { it.eventId })
         network.radioSend("A", envelope)
         network.radioSend("A", envelope)
         network.deliverAll()
@@ -414,7 +489,7 @@ class RelaySimulatorTest {
         assertEquals(3, ledger.events.size)
         assertEquals(0, storeA.pendingCount())
 
-        val ack = MeshEnvelope.ack("C", listOf("ev-1"))
+        val ack = MeshEnvelope.ack("C", listOf("ev-1"), signer)
         val firstAck = engineB.receive(ack)
         val secondAck = engineB.receive(ack)
         assertTrue(firstAck.forwarded)
@@ -427,7 +502,9 @@ class RelaySimulatorTest {
         val engine = RelayEngine("A", store, null, mutableListOf())
         val event = events().first()
 
-        engine.receive(MeshEnvelope.ack("B", listOf(event.eventId)))
+        engine.receive(
+            MeshEnvelope.ack("B", listOf(event.eventId), TestSigners.create("mesh:B"))
+        )
         assertEquals(0, store.pendingCount())
 
         engine.receive(MeshEnvelope.events("B", listOf(event)))

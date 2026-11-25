@@ -32,6 +32,12 @@ class BoxActivity : AppCompatActivity() {
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
     private var discovering = false
 
+    @Volatile
+    private var authorized: Boolean? = null
+
+    @Volatile
+    private var ownerId: String? = null
+
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
         val contents = result.contents ?: return@registerForActivityResult
         val batchId = BatchQrCodec.parse(contents)
@@ -82,6 +88,7 @@ class BoxActivity : AppCompatActivity() {
         binding.bindButton.setOnClickListener { bindBatch() }
         binding.registerActorButton.setOnClickListener { registerActor() }
         binding.copyKeyButton.setOnClickListener { copyPublicKey() }
+        binding.copyBoxIdButton.setOnClickListener { copyBoxId() }
         binding.toggleButton.setOnClickListener {
             if (engine.logging) stopLogging() else ensurePermissionAndStart()
         }
@@ -97,10 +104,11 @@ class BoxActivity : AppCompatActivity() {
     /** adb hook reached through MainActivity --es openBox <uuid> --ez autoStart true. */
     private fun handleDevIntent() {
         val batchId = intent?.getStringExtra("batchId")?.takeIf(::isUuidV4) ?: return
-        val head = intent.getStringExtra("ledgerHead").orEmpty()
-        engine.bind(batchId, head)
+        val mainHead = intent.getStringExtra("ledgerMainHead").orEmpty()
+        val traceHead = intent.getStringExtra("ledgerTraceHead").orEmpty()
+        engine.bind(batchId, mainHead, traceHead)
         binding.batchIdInput.setText(batchId)
-        binding.bindStatus.text = "Connected from adb (head=${short(head)})."
+        binding.bindStatus.text = "Connected from adb (main=${short(mainHead)})."
         Log.i(TAG, "box activity: bound from intent batch=$batchId autoStart=" +
             intent.getBooleanExtra("autoStart", false))
         if (intent.getBooleanExtra("autoStart", false)) {
@@ -134,6 +142,14 @@ class BoxActivity : AppCompatActivity() {
         toast("Public key copied")
     }
 
+    private fun copyBoxId() {
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText("AgriChain box ID", engine.identity.actorId)
+        )
+        toast("Box ID copied — paste it on the farmer's Authorize box screen")
+    }
+
     private fun registerActor() {
         val url = LedgerClient.normalizeBaseUrl(binding.ledgerUrlInput.text.toString())
         binding.ledgerUrlInput.setText(url)
@@ -149,6 +165,7 @@ class BoxActivity : AppCompatActivity() {
                     name = "Transport box",
                     role = "box",
                     pubKey = engine.identity.publicKeySpkiBase64,
+                    adminToken = LedgerSettings.adminToken(this),
                 )
             }
             runOnUiThread {
@@ -176,12 +193,22 @@ class BoxActivity : AppCompatActivity() {
         binding.bindStatus.text = "Connecting to crop…"
 
         Thread {
-            val result = runCatching { LedgerClient.fetchBatchHead(url, batchId) }
+            val result = runCatching {
+                LedgerClient.fetchBatchInfo(url, batchId, engine.identity.actorId)
+            }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 binding.bindButton.isEnabled = true
-                result.onSuccess { head -> bind(batchId, head, "online") }
-                    .onFailure { error -> promptOfflineBind(batchId, error) }
+                result.onSuccess { info ->
+                    bind(
+                        batchId = batchId,
+                        mainHead = info.mainHead,
+                        traceHead = info.traceHead,
+                        mode = "online",
+                        authorized = info.boundBoxId == engine.identity.actorId,
+                        ownerId = info.ownerId,
+                    )
+                }.onFailure { error -> promptOfflineBind(batchId, error) }
             }
         }.start()
     }
@@ -235,16 +262,36 @@ class BoxActivity : AppCompatActivity() {
                     "until you upload later."
             )
             .setPositiveButton("Connect offline") { _, _ ->
-                bind(batchId, engine.sessionHead(batchId), "offline")
+                bind(
+                    batchId = batchId,
+                    mainHead = engine.sessionHead(batchId, "main"),
+                    traceHead = engine.sessionHead(batchId, "trace"),
+                    mode = "offline",
+                    authorized = null,
+                    ownerId = null,
+                )
             }
             .setNegativeButton("Cancel") { _, _ -> refreshUi() }
             .show()
     }
 
-    private fun bind(batchId: String, head: String, mode: String) {
-        engine.bind(batchId, head)
+    private fun bind(
+        batchId: String,
+        mainHead: String,
+        traceHead: String,
+        mode: String,
+        authorized: Boolean?,
+        ownerId: String?,
+    ) {
+        engine.bind(batchId, mainHead, traceHead)
+        this.authorized = authorized
+        this.ownerId = ownerId
         refreshUi()
-        binding.bindStatus.text = "Connected ($mode) ✓"
+        binding.bindStatus.text = when (authorized) {
+            true -> "Connected ($mode) · box authorized ✓"
+            false -> "Connected ($mode) · waiting for the farmer to authorize this box"
+            null -> "Connected ($mode) ✓"
+        }
         toast("Connected to crop ${batchId.take(8)}…")
     }
 
@@ -333,7 +380,7 @@ class BoxActivity : AppCompatActivity() {
             toast("Connect a crop first (Step 1)")
             return
         }
-        val kinds = arrayOf("movement", "light", "proximity", "geofence")
+        val kinds = arrayOf("movement", "light", "proximity", "geofence", "gps_off", "mock_location", "power")
         AlertDialog.Builder(this)
             .setTitle("Test tamper alarm")
             .setItems(kinds) { _, which -> engine.simulateTamper(kinds[which]) }
@@ -370,15 +417,27 @@ class BoxActivity : AppCompatActivity() {
             return
         }
 
-        val localHead = engine.events.head(batchId, engine.ledgerHead)
+        val localMainHead = engine.events.head(batchId, "main", engine.ledgerMainHead)
+        val localTraceHead = engine.events.head(batchId, "trace", engine.ledgerTraceHead)
         val batchEvents = engine.events.events(batchId)
         val gpsEvents = batchEvents.filter { it.type == "GPS" }
         val tamperEvents = batchEvents.filter { it.type == "TAMPER" }
         val lastGps = gpsEvents.lastOrNull()
 
-        binding.bindStatus.text = "Connected to crop: ${batchId.take(8)}…"
-        binding.chainStatus.text =
-            "ledger head: ${short(engine.ledgerHead)}\nlocal head:  ${short(localHead)}"
+        binding.bindStatus.text = when (authorized) {
+            true -> "Connected to crop ${batchId.take(8)}… · authorized ✓"
+            false -> "Connected to crop ${batchId.take(8)}… · waiting for farmer BIND"
+            null -> "Connected to crop: ${batchId.take(8)}…"
+        }
+        binding.chainStatus.text = buildString {
+            append("main  ledger ${short(engine.ledgerMainHead)}")
+            append(" · local ${short(localMainHead)}\n")
+            append("trace ledger ${short(engine.ledgerTraceHead)}")
+            append(" · local ${short(localTraceHead)}")
+            if (!ownerId.isNullOrBlank()) {
+                append("\nowner ${ownerId!!.take(18)}…")
+            }
+        }
         binding.fixStatus.text = if (lastGps == null) {
             "No location pins yet."
         } else {

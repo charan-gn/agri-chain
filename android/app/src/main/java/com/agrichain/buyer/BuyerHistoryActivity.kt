@@ -25,6 +25,7 @@ class BuyerHistoryActivity : AppCompatActivity() {
     companion object {
         private const val EXTRA_BATCH_ID = "batchId"
         private const val CACHE_PREFS = "agrichain_history_cache"
+        private const val KEY_PREFS = "agrichain_actor_keys"
 
         fun intent(context: Context, batchId: String): Intent =
             Intent(context, BuyerHistoryActivity::class.java)
@@ -94,9 +95,32 @@ class BuyerHistoryActivity : AppCompatActivity() {
                             .getTradePrice(history.crop)
                             .optIntOrNull("pricePerKgPaise")
                     }.getOrNull()
+                    val verification = runCatching {
+                        verifyLocally(json, context)
+                    }.getOrNull()
+                    val locallyVerified = when {
+                        verification == null -> null
+                        verification.errors.isNotEmpty() -> false
+                        verification.missingKeys == 0 -> true
+                        else -> null
+                    }
+                    val localNote = when {
+                        verification == null -> "Local verification did not run"
+                        verification.errors.isNotEmpty() ->
+                            verification.errors.joinToString(" · ")
+                        verification.missingKeys > 0 ->
+                            "${verification.missingKeys} actor key(s) not cached — connect once to check signatures"
+                        else -> "${verification.checkedEvents} events · ${verification.checkedChains} chains checked on this phone"
+                    }
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
-                        render(history, price)
+                        render(
+                            history.copy(
+                                localVerified = locallyVerified,
+                                localNote = localNote,
+                            ),
+                            price,
+                        )
                         if (offlineNote != null) {
                             binding.safetySub.text =
                                 "$offlineNote (${online.exceptionOrNull()?.message.orEmpty()})"
@@ -123,19 +147,35 @@ class BuyerHistoryActivity : AppCompatActivity() {
                 binding.safetyIcon.setImageResource(R.drawable.ill_shield_alert)
                 binding.status.text = "Warning: ${parts.joinToString(", ")}"
                 binding.status.setTextColor(getColor(R.color.status_alert))
-                binding.safetySub.text = "The box flagged possible tampering or fake GPS. Check below."
+                binding.safetySub.text =
+                    "The box flagged possible tampering or fake GPS. ${history.localNote}"
             }
-            history.verified && history.heartbeatGaps > 0 -> {
+            history.localVerified == false -> {
+                binding.safetyIcon.setImageResource(R.drawable.ill_shield_alert)
+                binding.status.text = "Local Check Failed"
+                binding.status.setTextColor(getColor(R.color.status_alert))
+                binding.safetySub.text = history.localNote
+            }
+            history.localVerified == true && history.heartbeatGaps > 0 -> {
                 binding.safetyIcon.setImageResource(R.drawable.ill_shield_ok)
-                binding.status.text = "Verified with ${history.heartbeatGaps} GPS gap(s)"
+                binding.status.text = "Verified on this phone · ${history.heartbeatGaps} GPS gap(s)"
                 binding.status.setTextColor(getColor(R.color.status_warn))
-                binding.safetySub.text = "Records match, but GPS signal dropped for >5 min."
+                binding.safetySub.text =
+                    "Hashes, signatures and chains match. ${history.localNote}"
+            }
+            history.localVerified == true -> {
+                binding.safetyIcon.setImageResource(R.drawable.ill_shield_ok)
+                binding.status.text = "Safe & Verified on this phone ✓"
+                binding.status.setTextColor(getColor(R.color.status_ok))
+                binding.safetySub.text =
+                    "Every hash, signature and chain was checked locally. ${history.localNote}"
             }
             history.verified -> {
-                binding.safetyIcon.setImageResource(R.drawable.ill_shield_ok)
-                binding.status.text = "Safe & Verified ✓"
-                binding.status.setTextColor(getColor(R.color.status_ok))
-                binding.safetySub.text = "No tampering found. All records match."
+                binding.safetyIcon.setImageResource(R.drawable.ill_shield_offline)
+                binding.status.text = "Server says verified (hint)"
+                binding.status.setTextColor(getColor(R.color.status_warn))
+                binding.safetySub.text =
+                    "This phone could not check every signature. ${history.localNote}"
             }
             else -> {
                 binding.safetyIcon.setImageResource(R.drawable.ill_shield_alert)
@@ -282,6 +322,32 @@ class BuyerHistoryActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    /**
+     * Fetches the registered public key for every actor in the summary and verifies
+     * the batch on the phone. Keys are cached so a later offline open still verifies.
+     */
+    private fun verifyLocally(json: JSONObject, context: Context): LocalVerification {
+        val events = json.optJSONArray("events")
+            ?: return LocalVerification(false, 0, 0, 0, listOf("No events in the summary"))
+        val actorIds = (0 until events.length()).mapNotNull { index ->
+            events.getJSONObject(index).optString("actorId").takeIf { it.isNotEmpty() }
+        }.distinct()
+        val keys = actorIds.mapNotNull { actorId ->
+            keyFor(context, actorId)?.let { actorId to it }
+        }.toMap()
+        return LocalVerifier.verify(events, keys)
+    }
+
+    private fun keyFor(context: Context, actorId: String): String? {
+        val prefs = context.getSharedPreferences(KEY_PREFS, Context.MODE_PRIVATE)
+        prefs.getString(actorId, null)?.let { return it }
+        val key = runCatching {
+            LedgerClient(context).getActor(actorId).optString("pubKey")
+        }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
+        prefs.edit().putString(actorId, key).apply()
+        return key
+    }
 
     private fun cache(batchId: String, json: String) {
         getSharedPreferences(CACHE_PREFS, Context.MODE_PRIVATE)

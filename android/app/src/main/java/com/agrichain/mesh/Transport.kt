@@ -19,7 +19,21 @@ interface Transport {
 
     /** Returns the number of peers/chunks the envelope was handed to; 0 when unavailable. */
     fun send(envelope: MeshEnvelope): Int
+
+    /**
+     * Peer ids this send reaches. The relay records `sentTo(peer, eventIds)` so an
+     * ACK can clear only what the peer really received.
+     */
+    fun peers(envelope: MeshEnvelope): Set<String> = emptySet()
+
+    /** Event ids that [send] will actually hand over (SMS drops GPS and batches). */
+    fun carriedEventIds(envelope: MeshEnvelope): Set<String> =
+        envelope.events.mapTo(mutableSetOf()) { it.eventId }
 }
+
+/** SMS addresses are normalized so `+91 90000-00001` and `+919000000001` match. */
+fun normalizePeerId(raw: String): String =
+    raw.trim().filter { it.isDigit() || it == '+' || it.isLetter() || it in "-._" }
 
 interface RelayStore {
     fun hasSeen(eventId: String): Boolean
@@ -31,6 +45,18 @@ interface RelayStore {
 
     fun hasSeenEnvelope(envelopeId: String): Boolean = false
     fun markSeenEnvelope(envelopeId: String) {}
+
+    /** Peer the event was handed to; used to scope ACKs. */
+    fun markSentTo(peerId: String, eventIds: Collection<String>) {}
+    fun sentTo(peerId: String): Set<String> = emptySet()
+
+    /** Records a verified ACK from [peerId] for an event. */
+    fun markAcked(peerId: String, eventIds: Collection<String>) {}
+    fun acked(peerId: String): Set<String> = emptySet()
+
+    /** Trust-on-first-use key for an ACK signer id. */
+    fun ackKey(signerId: String): String? = null
+    fun rememberAckKey(signerId: String, publicKeySpkiBase64: String) {}
 }
 
 data class ReceiveResult(
@@ -38,6 +64,7 @@ data class ReceiveResult(
     val duplicates: Int,
     val forwarded: Boolean,
     val uploaded: Int,
+    val acked: Int = 0,
 )
 
 data class PumpResult(val uploaded: Int, val pending: Int, val error: String? = null)

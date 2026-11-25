@@ -192,6 +192,27 @@
                     android:paddingHorizontal="12dp"
                     android:textSize="14sp" />
 
+                <EditText
+                    android:id="@+id/adminTokenInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_card"
+                    android:hint="Admin token (dev-admin-token)"
+                    android:importantForAutofill="no"
+                    android:inputType="textPassword"
+                    android:maxLines="1"
+                    android:paddingHorizontal="12dp"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/saveTokenButton"
+                    style="@style/AgriButton.Outline"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Save admin token" />
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/saveUrlButton"
                     style="@style/AgriButton.Outline"

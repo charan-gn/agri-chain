@@ -12,8 +12,8 @@ object SmsInbox {
 }
 
 /**
- * Gateway side of the radio leg. Reassembles text SMS, then hands the envelope to
- * the relay, which stores it and uploads it if this phone has internet.
+ * Gateway side of the radio leg. Reassembles v3 binary chunks (or legacy AC1 text),
+ * then hands the envelope to the relay, which stores it and uploads it when online.
  */
 class SmsReceiver : BroadcastReceiver() {
 
@@ -39,12 +39,12 @@ class SmsReceiver : BroadcastReceiver() {
                         )
                         continue
                     }
-                    val reply = if (envelope.kind == MeshKind.EVENTS) {
-                        address.takeIf { it.isNotEmpty() }
-                    } else {
-                        null
-                    }
-                    val result = MeshRuntime.get(appContext).onEnvelope(envelope, "sms", reply)
+                    // The originating number is the peer we sent events to; ACKs are
+                    // scoped to it. Only events set the ACK destination.
+                    val peer = address.takeIf { it.isNotEmpty() }
+                    val reply = if (envelope.kind == MeshKind.EVENTS) peer else null
+                    val result = MeshRuntime.get(appContext)
+                        .onEnvelope(envelope, "sms", peerId = peer, replyTo = reply)
                     Log.i(
                         "AgriChain",
                         "sms: ${envelope.kind} from ...${address.takeLast(4)} " +

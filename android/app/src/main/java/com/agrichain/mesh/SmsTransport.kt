@@ -15,7 +15,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * GSM radio leg. Text SMS only; events are base64-chunked, queued and drained at
+ * GSM radio leg. Binary v3 envelopes are base64url-chunked, queued and drained at
  * a human pace so Android does not show the "sending many SMS" prompt.
  */
 class SmsTransport(
@@ -50,6 +50,18 @@ class SmsTransport(
     override fun stop() {
         log = null
     }
+
+    override fun peers(envelope: MeshEnvelope): Set<String> {
+        val destination = if (envelope.kind == MeshKind.ACK) {
+            replyTo ?: SmsSettings.gatewayNumber(context)
+        } else {
+            SmsSettings.gatewayNumber(context)
+        } ?: return emptySet()
+        return setOf(normalizePeerId(destination))
+    }
+
+    override fun carriedEventIds(envelope: MeshEnvelope): Set<String> =
+        SmsPolicy.filter(envelope).events.mapTo(mutableSetOf()) { it.eventId }
 
     override fun send(envelope: MeshEnvelope): Int {
         if (!available()) return 0

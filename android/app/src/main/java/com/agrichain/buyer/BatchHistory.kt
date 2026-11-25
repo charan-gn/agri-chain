@@ -26,6 +26,8 @@ data class BatchHistory(
     val mockCount: Int,
     val route: List<Pair<Double, Double>>,
     val events: List<HistoryEvent>,
+    val localVerified: Boolean? = null,
+    val localNote: String = "",
 ) {
 
     companion object {

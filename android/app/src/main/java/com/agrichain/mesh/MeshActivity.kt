@@ -165,7 +165,7 @@ class MeshActivity : AppCompatActivity() {
         val raw = binding.envelopeInput.text.toString().trim()
         val (status, result) = runtime.acceptManualInput(raw)
         when {
-            status == "invalid" -> log("Not a valid envelope, AC1| SMS or MC1| LoRa frame")
+            status == "invalid" -> log("Not a valid envelope, AC3| SMS or MC1| LoRa frame")
             result == null -> {
                 log("Buffered chunk ($status) — paste the remaining parts")
                 binding.envelopeInput.text?.clear()

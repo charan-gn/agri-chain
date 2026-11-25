@@ -352,6 +352,16 @@
                     app:icon="@drawable/ic_copy"
                     app:iconTint="@color/text_primary" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/copyBoxIdButton"
+                    style="@style/AgriButton.Outline"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Copy box ID (for farmer)"
+                    app:icon="@drawable/ic_copy"
+                    app:iconTint="@color/text_primary" />
+
                 <TextView
                     android:id="@+id/actorStatus"
                     android:layout_width="match_parent"

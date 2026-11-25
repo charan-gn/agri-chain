@@ -107,6 +107,9 @@ class MeshtasticTransport(
         }
     }
 
+    /** LoRa is a broadcast medium, so ACKs are scoped to this link id. */
+    override fun peers(envelope: MeshEnvelope): Set<String> = setOf(id)
+
     override fun send(envelope: MeshEnvelope): Int {
         if (!available()) return 0
         val chunks = MeshtasticCodec.chunks(envelope)

@@ -24,12 +24,25 @@ class SyncActivity : AppCompatActivity() {
         UiHelpers.wireToggle(binding.setupHeader, binding.setupBody, binding.setupChevron)
 
         binding.ledgerUrlInput.setText(LedgerSettings.baseUrl(this))
+        binding.adminTokenInput.setText(LedgerSettings.adminToken(this))
         binding.findLedgerButton.setOnClickListener { autoDetect(announce = true) }
         binding.usbUrlButton.setOnClickListener {
             LedgerSettings.setBaseUrl(this, LedgerSettings.USB_BASE_URL)
             binding.ledgerUrlInput.setText(LedgerSettings.USB_BASE_URL)
             binding.status.text = "USB cable selected (127.0.0.1:8000)"
             binding.status.setTextColor(getColor(R.color.status_neutral))
+        }
+        binding.saveTokenButton.setOnClickListener {
+            runCatching {
+                LedgerSettings.setAdminToken(this, binding.adminTokenInput.text.toString())
+            }.onSuccess { saved ->
+                binding.adminTokenInput.setText(saved)
+                binding.status.text = "Admin token saved ✓"
+                binding.status.setTextColor(getColor(R.color.status_ok))
+            }.onFailure { error ->
+                binding.status.text = error.message
+                binding.status.setTextColor(getColor(R.color.status_alert))
+            }
         }
         binding.saveUrlButton.setOnClickListener {
             if (saveUrl() != null) {
@@ -98,6 +111,14 @@ class SyncActivity : AppCompatActivity() {
 
     private fun registerActors() {
         val url = saveUrl() ?: return
+        val token = runCatching {
+            LedgerSettings.setAdminToken(this, binding.adminTokenInput.text.toString())
+        }.onFailure {
+            binding.status.text = it.message
+            binding.status.setTextColor(getColor(R.color.status_alert))
+            return
+        }.getOrThrow()
+        binding.adminTokenInput.setText(token)
         setBusy(true, "Registering phone IDs…")
         Thread {
             try {
@@ -166,6 +187,7 @@ class SyncActivity : AppCompatActivity() {
         binding.registerButton.isEnabled = !busy
         binding.syncButton.isEnabled = !busy
         binding.saveUrlButton.isEnabled = !busy
+        binding.saveTokenButton.isEnabled = !busy
         binding.usbUrlButton.isEnabled = !busy
         binding.findLedgerButton.isEnabled = !busy && !discovering
         binding.status.text = status

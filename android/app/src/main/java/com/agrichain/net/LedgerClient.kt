@@ -14,6 +14,9 @@ class LedgerClient(context: Context) {
 
     fun getBatch(batchId: String): JSONObject = get("/batches/$batchId")
 
+    fun getActor(actorId: String): JSONObject =
+        get("/actors/${URLEncoder.encode(actorId, "UTF-8")}")
+
     fun getTradePrice(crop: String): JSONObject =
         get("/trades?crop=${URLEncoder.encode(crop, "UTF-8")}")
 

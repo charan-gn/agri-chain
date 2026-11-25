@@ -8,13 +8,25 @@ import java.net.URL
 
 class BatchNotFoundException(message: String) : IOException(message)
 
+data class BoxBatchInfo(
+    val batchId: String,
+    val mainHead: String,
+    val traceHead: String,
+    val boundBoxId: String?,
+    val ownerId: String?,
+)
+
 object LedgerClient {
 
     fun normalizeBaseUrl(raw: String): String =
         raw.trim().trimEnd('/').ifBlank { LedgerSettings.DEFAULT_BASE_URL }
 
+    /**
+     * Reads this box's own chain heads and the latest BIND. The box does not need
+     * the farmer's head; it only needs where its own `main`/`trace` chains stop.
+     */
     @Throws(IOException::class)
-    fun fetchBatchHead(baseUrl: String, batchId: String): String {
+    fun fetchBatchInfo(baseUrl: String, batchId: String, boxActorId: String): BoxBatchInfo {
         val connection = open("${normalizeBaseUrl(baseUrl)}/batches/$batchId")
         try {
             val code = connection.responseCode
@@ -25,7 +37,53 @@ object LedgerClient {
             if (json.optString("batchId") != batchId) {
                 throw IOException("Ledger returned a different batch")
             }
-            return if (json.isNull("lastHash")) "" else json.getString("lastHash")
+
+            var mainHead = ""
+            var traceHead = ""
+            val chains = json.optJSONArray("chains")
+            if (chains != null) {
+                for (index in 0 until chains.length()) {
+                    val chain = chains.getJSONObject(index)
+                    if (chain.optString("actorId") != boxActorId) continue
+                    when (chain.optString("stream")) {
+                        "main" -> mainHead = chain.optString("head")
+                        "trace" -> traceHead = chain.optString("head")
+                    }
+                }
+            }
+
+            var boundBoxId: String? = null
+            var latestBindTs = Long.MIN_VALUE
+            var ownerId: String? = null
+            val events = json.optJSONArray("events")
+            if (events != null) {
+                for (index in 0 until events.length()) {
+                    val event = events.getJSONObject(index)
+                    when (event.optString("type")) {
+                        "REGISTER" -> ownerId = event.optString("actorId")
+                        "BIND" -> {
+                            val ts = event.optLong("ts")
+                            if (ts >= latestBindTs) {
+                                latestBindTs = ts
+                                val data = event.optJSONObject("data")
+                                boundBoxId = if (data == null || data.isNull("boxId")) {
+                                    null
+                                } else {
+                                    data.optString("boxId").takeIf { it.isNotEmpty() }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return BoxBatchInfo(
+                batchId = batchId,
+                mainHead = mainHead,
+                traceHead = traceHead,
+                boundBoxId = boundBoxId,
+                ownerId = ownerId,
+            )
         } finally {
             connection.disconnect()
         }

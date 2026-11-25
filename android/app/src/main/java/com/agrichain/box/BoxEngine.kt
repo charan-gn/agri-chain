@@ -36,7 +36,11 @@ class BoxEngine(context: Context) {
         private set
 
     @Volatile
-    var ledgerHead: String = ""
+    var ledgerMainHead: String = ""
+        private set
+
+    @Volatile
+    var ledgerTraceHead: String = ""
         private set
 
     @Volatile
@@ -83,15 +87,17 @@ class BoxEngine(context: Context) {
     init {
         session.batchId()?.let { batchId ->
             boundBatchId = batchId
-            ledgerHead = session.ledgerHead(batchId)
+            ledgerMainHead = session.ledgerMainHead(batchId)
+            ledgerTraceHead = session.ledgerTraceHead(batchId)
         }
     }
 
-    fun bind(batchId: String, head: String) {
+    fun bind(batchId: String, mainHead: String, traceHead: String) {
         if (logging) stopGps()
         if (tamperArmed) disarmTamper()
         boundBatchId = batchId
-        ledgerHead = head
+        ledgerMainHead = mainHead
+        ledgerTraceHead = traceHead
         geofenceLat = null
         geofenceLon = null
         geofenceBreached = false
@@ -99,8 +105,11 @@ class BoxEngine(context: Context) {
         lastRecordedLon = null
         lastRecordedTsMs = null
         lastMockTamperAtMs = 0L
-        session.bind(batchId, head)
-        Log.i(TAG, "box: bound $batchId head=${short(head)}")
+        session.bind(batchId, mainHead, traceHead)
+        Log.i(
+            TAG,
+            "box: bound $batchId main=${short(mainHead)} trace=${short(traceHead)}",
+        )
         notifyChange()
     }
 
@@ -128,7 +137,8 @@ class BoxEngine(context: Context) {
 
     fun lastKnown(): Location? = gps.lastKnown()
 
-    fun sessionHead(batchId: String): String = session.ledgerHead(batchId)
+    fun sessionHead(batchId: String, stream: String): String =
+        session.ledgerHead(batchId, stream)
 
     fun logCurrentFix(): Boolean {
         if (boundBatchId == null) {
@@ -231,7 +241,7 @@ class BoxEngine(context: Context) {
                 latitude = location.latitude,
                 longitude = location.longitude,
                 accuracyM = accuracy,
-                baseHead = ledgerHead,
+                baseHead = ledgerTraceHead,
                 mock = isMock,
             )
         }.getOrElse { error ->
@@ -286,7 +296,7 @@ class BoxEngine(context: Context) {
             return
         }
         val event = runCatching {
-            events.appendTamper(batchId, kind, detail, ledgerHead)
+            events.appendTamper(batchId, kind, detail, ledgerMainHead)
         }.getOrElse { error ->
             Log.w(TAG, "box: tamper event failed: ${error.message}")
             onMessage?.invoke("Could not sign tamper event: ${error.message}")

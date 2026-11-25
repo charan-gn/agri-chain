@@ -97,7 +97,48 @@ class SmsCodecTest {
         assertNull(SmsCodec.parsePart("AC1|abcd|2/1|AAAA"))
         assertNull(SmsCodec.parsePart("AC1|abcd|0/2|AAAA"))
         assertNull(SmsCodec.parsePart("AC2|abcd|1/1|AAAA"))
+        assertNull(SmsCodec.parsePart("AC3|nothex!!|1/1|AAAA"))
         assertTrue(SmsCodec.isPart("AC1|abcd|1/1|AAAA"))
+        assertTrue(SmsCodec.isPart("AC3|aabbccdd|1/1|AAAA"))
+    }
+
+    @Test
+    fun `v3 chunks are binary url-safe and CRC checked`() {
+        val original = envelope()
+        val chunks = SmsCodec.chunks(original)
+        val joined = chunks
+            .map { SmsCodec.parsePart(it)!! }
+            .sortedBy { it.index }
+            .joinToString("") { it.payload }
+        val bytes = java.util.Base64.getUrlDecoder().decode(joined)
+
+        assertEquals(original, SmsCodec.decodeBinary(bytes))
+        assertTrue(chunks.first().startsWith("AC3|"))
+        assertTrue(chunks.first().split("|")[3].none { it == '+' || it == '/' })
+    }
+
+    @Test
+    fun `a corrupted v3 body fails the CRC`() {
+        val bytes = SmsCodec.encodeBinary(envelope())
+        bytes[bytes.size / 2] = (bytes[bytes.size / 2] + 1).toByte()
+
+        assertNull(SmsCodec.decodeBinary(bytes))
+    }
+
+    @Test
+    fun `signed ack survives the binary codec`() {
+        val event = envelope().events.first()
+        val ack = MeshEnvelope.ack(
+            "phone-b",
+            listOf(event.eventId),
+            TestSigners.create("mesh:B"),
+        )
+
+        val decoded = SmsCodec.decodeBinary(SmsCodec.encodeBinary(ack))
+
+        assertEquals(MeshKind.ACK, decoded?.kind)
+        assertEquals(ack.ackedEventIds, decoded?.ackedEventIds)
+        assertTrue(decoded?.verifyAck() == true)
     }
 
     @Test

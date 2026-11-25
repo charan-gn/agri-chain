@@ -10,6 +10,11 @@ interface Signer {
     fun sign(bytes: ByteArray): ByteArray
 }
 
+/** A signer that can also publish its SPKI key, used for signed mesh ACKs. */
+interface PublicKeySigner : Signer {
+    val publicKeySpkiBase64: String
+}
+
 data class Event(
     val eventId: String,
     val batchId: String,

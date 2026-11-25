@@ -14,8 +14,8 @@ import java.util.UUID
 class ActorIdentity private constructor(
     override val actorId: String,
     private val privateKey: PrivateKey,
-    val publicKeySpkiBase64: String,
-) : Signer {
+    override val publicKeySpkiBase64: String,
+) : PublicKeySigner {
 
     override fun sign(bytes: ByteArray): ByteArray {
         val signature = Signature.getInstance("SHA256withECDSA")

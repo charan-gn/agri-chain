@@ -1,10 +1,14 @@
 package com.agrichain.mesh
 
+import com.agrichain.core.CanonicalJson
 import com.agrichain.core.Event
 import com.agrichain.core.EventCodec
+import com.agrichain.core.EventVerifier
+import com.agrichain.core.PublicKeySigner
 import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 import java.util.UUID
 
 enum class MeshKind(val code: String) {
@@ -13,9 +17,13 @@ enum class MeshKind(val code: String) {
 }
 
 /**
- * Mesh envelope v2. Keys are short because SMS is a transport. The event hash is
+ * Mesh envelope v3. Keys are short because SMS is a transport. The event hash is
  * omitted and recomputed by the receiver; the signature is carried unchanged.
- * v1 envelopes from T12 still parse so an old build can hand over its queue.
+ * v1/v2 envelopes still parse so older builds can hand over their queue.
+ *
+ * ACKs are signed by the acknowledging node (H6). The signed bytes cover
+ * `{v,k,id,s,t,ack}` but not `ttl`, so a relay can decrement the TTL without
+ * re-signing; envelope-id dedupe stops replay.
  */
 data class MeshEnvelope(
     val kind: MeshKind,
@@ -25,6 +33,8 @@ data class MeshEnvelope(
     val ttl: Int,
     val events: List<Event> = emptyList(),
     val ackedEventIds: List<String> = emptyList(),
+    val sig: String? = null,
+    val pubKey: String? = null,
 ) {
 
     fun toJson(): JSONObject {
@@ -45,6 +55,10 @@ data class MeshEnvelope(
             ackedEventIds.forEach { array.put(it) }
             json.put("ack", array)
         }
+        if (kind == MeshKind.ACK) {
+            sig?.let { json.put("sig", it) }
+            pubKey?.let { json.put("pk", it) }
+        }
         return json
     }
 
@@ -57,10 +71,32 @@ data class MeshEnvelope(
     fun onlyEvents(predicate: (Event) -> Boolean): MeshEnvelope =
         copy(events = events.filter(predicate))
 
+    /** Bytes signed by the ACK sender; `ttl` is intentionally excluded. */
+    fun ackBytes(): ByteArray = CanonicalJson.encode(
+        linkedMapOf<String, Any?>(
+            "v" to VERSION,
+            "k" to MeshKind.ACK.code,
+            "id" to envelopeId,
+            "s" to senderId,
+            "t" to sentAt,
+            "ack" to ackedEventIds,
+        )
+    ).toByteArray(StandardCharsets.UTF_8)
+
+    fun verifyAck(): Boolean {
+        if (kind != MeshKind.ACK) return false
+        val signature = sig ?: return false
+        val key = pubKey ?: return false
+        return EventVerifier.verifyEcdsa(ackBytes(), signature, key)
+    }
+
     companion object {
-        const val VERSION = 2
+        const val VERSION = 3
         const val DEFAULT_TTL = 6
         private const val V1_TTL = 6
+
+        fun shortId(): String =
+            UUID.randomUUID().toString().replace("-", "").take(8).lowercase()
 
         fun events(
             senderId: String,
@@ -68,33 +104,92 @@ data class MeshEnvelope(
             ttl: Int = DEFAULT_TTL,
         ): MeshEnvelope = MeshEnvelope(
             kind = MeshKind.EVENTS,
-            envelopeId = UUID.randomUUID().toString(),
+            envelopeId = shortId(),
             senderId = senderId,
             sentAt = System.currentTimeMillis(),
             ttl = ttl,
             events = events,
         )
 
+        /** Unsigned ACK for codec tests and pre-T21 peers; the relay ignores it. */
         fun ack(
             senderId: String,
             eventIds: Collection<String>,
             ttl: Int = DEFAULT_TTL,
         ): MeshEnvelope = MeshEnvelope(
             kind = MeshKind.ACK,
-            envelopeId = UUID.randomUUID().toString(),
+            envelopeId = shortId(),
             senderId = senderId,
             sentAt = System.currentTimeMillis(),
             ttl = ttl,
             ackedEventIds = eventIds.distinct(),
         )
 
+        /** A signed ACK. The gateway only calls this after a 201/idempotent success. */
+        fun ack(
+            senderId: String,
+            eventIds: Collection<String>,
+            signer: PublicKeySigner,
+            ttl: Int = DEFAULT_TTL,
+        ): MeshEnvelope {
+            val unsigned = MeshEnvelope(
+                kind = MeshKind.ACK,
+                envelopeId = shortId(),
+                senderId = senderId,
+                sentAt = System.currentTimeMillis(),
+                ttl = ttl,
+                ackedEventIds = eventIds.distinct(),
+            )
+            val signature = Base64.getEncoder().encodeToString(signer.sign(unsigned.ackBytes()))
+            return unsigned.copy(sig = signature, pubKey = signer.publicKeySpkiBase64)
+        }
+
         fun parse(text: String): MeshEnvelope? =
             runCatching { fromJson(JSONObject(text)) }.getOrNull()
 
         fun fromJson(json: JSONObject): MeshEnvelope? = when (json.optInt("v")) {
-            VERSION -> fromV2(json)
+            VERSION -> fromV3(json)
+            2 -> fromV2(json)
             1 -> fromV1(json)
             else -> null
+        }
+
+        private fun fromV3(json: JSONObject): MeshEnvelope? {
+            val kind = when (json.optString("k")) {
+                MeshKind.EVENTS.code -> MeshKind.EVENTS
+                MeshKind.ACK.code -> MeshKind.ACK
+                else -> return null
+            }
+            val envelopeId = json.optString("id")
+            val senderId = json.optString("s")
+            val sentAt = json.optLong("t")
+            val ttl = json.optInt("ttl")
+            if (envelopeId.isEmpty() || senderId.isEmpty() || sentAt <= 0 || ttl < 0) return null
+
+            val events = json.optJSONArray("ev")?.let { array ->
+                (0 until array.length()).map { index ->
+                    runCatching { decodeEvent(array.getJSONObject(index)) }.getOrNull()
+                        ?: return null
+                }
+            }.orEmpty()
+            val acks = json.optJSONArray("ack")?.let { array ->
+                (0 until array.length()).map { index -> array.getString(index) }
+            }.orEmpty()
+
+            if (events.isEmpty() && acks.isEmpty()) return null
+            if (kind == MeshKind.EVENTS && events.isEmpty()) return null
+            if (kind == MeshKind.ACK && acks.isEmpty()) return null
+            return MeshEnvelope(
+                kind = kind,
+                envelopeId = envelopeId,
+                senderId = senderId,
+                sentAt = sentAt,
+                ttl = ttl,
+                events = events,
+                ackedEventIds = acks,
+                sig = json.optString("sig").takeIf { it.isNotEmpty() },
+                pubKey = json.optString("pk").takeIf { it.isNotEmpty() },
+            )
         }
 
         private fun fromV2(json: JSONObject): MeshEnvelope? {
