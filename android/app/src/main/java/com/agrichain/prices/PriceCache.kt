@@ -33,15 +33,6 @@ class PriceCache(context: Context) {
             .apply()
     }
 
-    fun ledgerUrl(): String =
-        prefs.getString("ledger_url", PriceUrls.DEFAULT_BASE_URL)
-            .orEmpty()
-            .ifEmpty { PriceUrls.DEFAULT_BASE_URL }
-
-    fun saveLedgerUrl(url: String) {
-        prefs.edit().putString("ledger_url", url).apply()
-    }
-
     fun crop(): String = prefs.getString("crop", "wheat").orEmpty().ifEmpty { "wheat" }
 
     fun market(): String? = prefs.getString("market", "").orEmpty().ifEmpty { null }

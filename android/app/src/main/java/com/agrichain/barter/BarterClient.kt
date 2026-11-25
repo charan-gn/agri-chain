@@ -46,7 +46,8 @@ data class BarterOffer(
 
 class BarterClient(context: Context) {
 
-    private val baseUrl = LedgerSettings.baseUrl(context)
+    private val appContext = context.applicationContext
+    private val baseUrl: String get() = LedgerSettings.baseUrl(appContext)
 
     fun myBatches(actorId: String): List<BatchInfo> {
         val json = get("/batches?owner=${encode(actorId)}")

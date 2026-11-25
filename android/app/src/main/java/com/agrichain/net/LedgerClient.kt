@@ -9,7 +9,8 @@ import java.net.URLEncoder
 
 class LedgerClient(context: Context) {
 
-    private val baseUrl = LedgerSettings.baseUrl(context)
+    private val appContext = context.applicationContext
+    private val baseUrl: String get() = LedgerSettings.baseUrl(appContext)
 
     fun getBatch(batchId: String): JSONObject = get("/batches/$batchId")
 

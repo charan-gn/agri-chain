@@ -1,5 +1,6 @@
 package com.agrichain.prices
 
+import com.agrichain.net.LedgerSettings
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
@@ -98,7 +99,7 @@ object PriceBars {
 
 object PriceUrls {
 
-    const val DEFAULT_BASE_URL = "http://10.0.2.2:8000"
+    const val DEFAULT_BASE_URL = LedgerSettings.DEFAULT_BASE_URL
 
     fun normalizeBaseUrl(raw: String): String {
         val trimmed = raw.trim().ifEmpty { DEFAULT_BASE_URL }
