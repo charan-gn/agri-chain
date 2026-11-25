@@ -17,6 +17,12 @@ class SyncActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.ledgerUrlInput.setText(LedgerSettings.baseUrl(this))
+        binding.usbUrlButton.setOnClickListener {
+            LedgerSettings.setBaseUrl(this, LedgerSettings.USB_BASE_URL)
+            binding.ledgerUrlInput.setText(LedgerSettings.USB_BASE_URL)
+            binding.status.text = "USB ledger selected (adb reverse tcp:8000)"
+            binding.status.setTextColor(getColor(R.color.status_neutral))
+        }
         binding.saveUrlButton.setOnClickListener {
             if (saveUrl() != null) {
                 binding.status.text = "Ledger server saved"
@@ -107,6 +113,7 @@ class SyncActivity : AppCompatActivity() {
         binding.registerButton.isEnabled = !busy
         binding.syncButton.isEnabled = !busy
         binding.saveUrlButton.isEnabled = !busy
+        binding.usbUrlButton.isEnabled = !busy
         binding.status.text = status
         binding.status.setTextColor(getColor(if (busy) R.color.status_neutral else R.color.status_ok))
     }

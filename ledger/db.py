@@ -173,3 +173,15 @@ class LedgerDb:
         with self.connection() as conn:
             rows = conn.execute("SELECT * FROM actors").fetchall()
         return {row["actor_id"]: dict(row) for row in rows}
+
+    def recent_events(self, limit: int) -> list[dict]:
+        with self.connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM events ORDER BY seq DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def event_count(self) -> int:
+        with self.connection() as conn:
+            row = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()
+        return int(row["n"])

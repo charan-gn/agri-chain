@@ -9,7 +9,8 @@ from typing import Any
 from fastapi import Body, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from crypto import (
     MARKET_BATCH,
@@ -32,6 +33,7 @@ from tokens import compute_balances, trades_for_crop, weighted_price
 from validation import ValidationError, validate_actor_registration, validate_event
 
 DEFAULT_DB = Path(__file__).resolve().parent / "ledger.db"
+WEB_DIR = Path(__file__).resolve().parent / "web"
 
 
 class ApiError(Exception):
@@ -302,6 +304,21 @@ def create_app(db_path: str | None = None) -> FastAPI:
                 )
         return {"results": results}
 
+    @app.get("/events/recent")
+    def recent_events(limit: int = Query(default=20, ge=1, le=100)) -> dict:
+        crops = {}
+        for batch_id in db.register_batches():
+            rows = db.events_for_batch(batch_id)
+            if rows:
+                crops[batch_id] = json.loads(rows[0]["data_json"]).get("crop")
+        events = []
+        for row in db.recent_events(limit):
+            event = event_out(row)
+            event["seq"] = row["seq"]
+            event["crop"] = crops.get(event["batchId"])
+            events.append(event)
+        return {"events": events, "updatedAt": int(time.time() * 1000)}
+
     @app.get("/events")
     def list_events(batchId: str = Query(...)) -> dict:
         rows = db.events_for_batch(batchId)
@@ -381,6 +398,37 @@ def create_app(db_path: str | None = None) -> FastAPI:
                 batches.append(summary)
         return {"batches": batches}
 
+    @app.get("/stats")
+    def stats(limit: int = Query(default=20, ge=1, le=100)) -> dict:
+        batches = []
+        for batch_id in db.register_batches():
+            rows = db.events_for_batch(batch_id)
+            if not rows:
+                continue
+            batches.append(build_summary(db, rows, include_events=False))
+        crops = {batch["batchId"]: batch["crop"] for batch in batches}
+        recent = []
+        for row in db.recent_events(limit):
+            event = event_out(row)
+            event["seq"] = row["seq"]
+            event["crop"] = crops.get(event["batchId"])
+            recent.append(event)
+        return {
+            "actors": len(db.all_actors()),
+            "batches": len(batches),
+            "events": db.event_count(),
+            "tamperEvents": sum(batch["tamperCount"] for batch in batches),
+            "validChains": sum(1 for batch in batches if batch["verified"]),
+            "recent": recent,
+            "updatedAt": int(time.time() * 1000),
+        }
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/dashboard", include_in_schema=False)
+    def dashboard() -> FileResponse:
+        return FileResponse(WEB_DIR / "index.html")
+
+    app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
     app.include_router(prices_router)
     return app
 

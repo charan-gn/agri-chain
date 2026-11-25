@@ -32,6 +32,18 @@
             android:maxLines="1" />
 
         <Button
+            android:id="@+id/usbUrlButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Use USB (adb reverse)" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="USB debugging: run tools/phone.sh, then tap Use USB. Host becomes 127.0.0.1:8000."
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+        <Button
             android:id="@+id/saveUrlButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

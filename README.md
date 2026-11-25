@@ -25,6 +25,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T12 | Mesh relay (Nearby Connections) | done | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
 | T13 | Demo script + polish | done | charan | task-T13-charan | demo/, README.md | all |
 | T14 | SMS radio leg + relay v2 (replaces T12 scope) | done | charan | task-T14-charan | APP/mesh/, APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11, T12 |
+| T15 | Laptop ledger runner + web dashboard + USB phone flow | done | charan | task-T15-charan | tools/, ledger/, APP/net/, APP/data/, README.md | T4, T14 |
 
 ## Contracts
 
@@ -75,11 +76,15 @@ Chain rule: one linear chain per `batchId`; genesis `prevHash=""`. The server ap
 | Method + path | Body / query | Response |
 |---------------|--------------|----------|
 | `GET /health` | — | `{"ok":true}` |
+| `GET /` or `/dashboard` | — | HTML dashboard: batches, live events, barter, prices, chain health |
+| `GET /static/*` | — | dashboard CSS/JS (no CDN, works offline) |
 | `POST /actors` | `{"actorId","name","role","pubKey"}` | `201 {"actorId"}`; `409` if key differs |
 | `GET /actors/{actorId}` | — | `{"actorId","name","role","pubKey"}` |
 | `POST /events` | one Event | `201 {"ok":true,"batchId","head","seq"}`; `400` bad hash/sig; `409 {"error":"prev_mismatch","head":"..."}`; `422` unknown actor |
 | `POST /events/bulk` | `{"events":[Event,...]}` | `200 {"results":[{"eventId","ok","status","error"?}]}`, appended in order |
 | `GET /events?batchId=<id>` | — | `{"batchId","head","events":[Event,...]}` in chain order |
+| `GET /events/recent?limit=20` | limit 1–100 | `{"events":[Event + seq + crop],"updatedAt":ms}` newest first, all batches |
+| `GET /stats?limit=20` | limit 1–100 | `{"actors","batches","events","tamperEvents","validChains","recent","updatedAt"}` |
 | `GET /batches/{batchId}` | — | BatchSummary with `events` |
 | `GET /batches?owner=<actorId>` | — | `{"batches":[BatchSummary]}` without `events` |
 | `GET /batches/{batchId}/verify` | — | `{"valid":bool,"events":int,"head":str,"brokenAt"?:eventId,"reason"?}` |
@@ -129,6 +134,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 14:10] FROM charan → all: T13 done on task-T13-charan. `demo/seed.py` builds the whole story against a running ledger: 4 actors, 2 batches, box GPS + tamper, 2 priced transfers, a barter offer/accept and a price refresh. It prints the batch ids/QR payloads for the Buyer screen. Run `python3 demo/seed.py --base-url http://127.0.0.1:8000`. Next: SMS radio leg + relay rewrite (T14). | open
 - [2026-11-24 14:25] FROM charan → all: claiming T14 (replaces T12 scope). Nearby stays; add an SMS transport, a v2 compact envelope, one `Transport` interface, and relay v2 (persisted eventId dedupe, TTL forwarding, ACK cleanup, any internet node is a gateway). SMS only carries REGISTER/TRANSFER/TAMPER/DELIVER, chunked text messages to a configured gateway number. Contract above; no ledger changes needed (append is already idempotent by eventId). | open
 - [2026-11-24 15:20] FROM charan → all: T14 done on task-T14-charan. `Transport` is shared by Nearby, SMS and the HTTP gateway. SMS text chunks are `AC1|<msgId>|<idx>/<total>|<base64>`, drained every 2 s; the gateway receiver reassembles, stores, POSTs when online and sends an ACK back to the originating number. GPS never goes over SMS. The JVM simulator proves SMS-only A → online B → ledger, loss/reorder, multi-hop, duplicate suppression, ACK cleanup and TTL drop. Tests: 51 Android (15 new), 27 ledger. Real-phone SMS/Nearby still needs the manual 2-phone pass above. | open
+- [2026-11-24 17:50] FROM charan → all: claiming T15. Add `tools/ledger.sh` (auto venv + LAN URLs), `tools/phone.sh` (build/install, `adb reverse tcp:8000`, permission grants, launch), `tools/dev.sh` (both), a ledger-served web dashboard at `/`, and a "Use USB" host button in Ledger sync. No contract change; `/stats` and `/events/recent` are additive. | open
+- [2026-11-25 12:00] FROM charan → all: T15 done on task-T15-charan. `./tools/ledger.sh` serves the API and a dashboard at `/` (batches, live events, barter, mandi prices, chain health, batch drill-down). `./tools/dev.sh` starts it, builds/installs the APK over USB, runs `adb reverse tcp:8000 tcp:8000`, grants runtime permissions and launches the app. In the app tap Ledger sync → "Use USB". Tests: 29 ledger (2 new), 51 Android. | open
 
 ## Decisions log
 
@@ -150,6 +157,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-24 charan: T13 seeds the demo through the public REST API with fresh keys per run, so it never needs ledger internals. Batch ids are printed for the Buyer screen; phones still register their own actors.
 - 2026-11-24 charan: T14 replaces the v1 mesh envelope with compact v2 keys and a shared `Transport` interface. Nearby remains; SMS is the GSM radio leg (text messages, ≤140-char base64 chunks, gateway number in settings); internet is plain HTTP to the ledger. ACKs are relayed like events so any internet node can clear the mesh. The JVM simulator is the proof; phone tests are manual.
 - 2026-11-24 charan: SMS uses `AC1|<msgId>|<idx>/<total>|<base64>` with a 140-char payload (≤160-char SMS), 2 s between sends, and a persisted outbox so a dropped chunk is retried on the next broadcast. ACKs go to the inbound `originatingAddress`, not the configured gateway, and are not added to the seen-set (an ACK can arrive before its event).
+- 2026-11-25 charan: T15 serves the dashboard from FastAPI itself (`/`, `/static`), so there is no second server or CDN and the demo works offline. `/stats` and `/events/recent` are read-only additions. USB testing uses `adb reverse tcp:8000 tcp:8000` plus the app's "Use USB" button (`http://127.0.0.1:8000`); Wi-Fi phones keep using the laptop LAN IP.
 
 ## Blockers
 
@@ -169,14 +177,20 @@ Final script is T13. Every task must serve this flow:
 Run (updated as tasks land):
 
 ```bash
-# Ledger (T4)
-cd ledger && python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 8000
+# Ledger + dashboard (T4, T15). Auto-creates .venv if deps are missing.
+./tools/ledger.sh
+# Dashboard: http://localhost:8000/  ·  API docs: /docs
+# LAN phones: use the printed http://<laptop-ip>:8000 URL.
+
+# USB phone (T15): build, install, adb reverse, grant permissions, launch.
+./tools/dev.sh            # starts the ledger too; Ctrl-C stops it
+# Or run ./tools/ledger.sh in one terminal and ./tools/phone.sh in another.
+# In the app: Ledger sync → "Use USB" → Register actors → Sync events.
+# adb reverse maps phone 127.0.0.1:8000 to this laptop; Wi-Fi is not needed.
 
 # Ledger tests
-pip install -r requirements-dev.txt
-python3 -m pytest -q
+pip install -r ledger/requirements-dev.txt
+cd ledger && python3 -m pytest -q
 
 # Android skeleton (T1). JDK 17 + SDK 36 required.
 cd android && ./gradlew installDebug
