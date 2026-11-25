@@ -311,3 +311,13 @@ class LedgerDb:
         with self.connection() as conn:
             row = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()
         return int(row["n"])
+
+    def event_height(self) -> int:
+        with self.connection() as conn:
+            row = conn.execute("SELECT COALESCE(MAX(seq), 0) AS n FROM events").fetchone()
+        return int(row["n"])
+
+    def event_hashes(self) -> list[str]:
+        with self.connection() as conn:
+            rows = conn.execute("SELECT hash FROM events ORDER BY seq").fetchall()
+        return [row["hash"] for row in rows]

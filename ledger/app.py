@@ -20,6 +20,7 @@ from crypto import (
     validate_public_key,
     verify_signature,
 )
+from anchor import load_or_create_key, signed_root
 from db import BatchExists, BatchNotFound, EventConflict, LedgerDb, PrevMismatch
 from discovery import start_discovery
 from barter import (
@@ -361,10 +362,18 @@ def admin_token() -> str | None:
     return None
 
 
-def create_app(db_path: str | None = None) -> FastAPI:
+def create_app(db_path: str | None = None, node_key_path: str | None = None) -> FastAPI:
     app = FastAPI(title="AgriChain Ledger", version="2.0")
     db = LedgerDb(db_path or os.environ.get("LEDGER_DB", str(DEFAULT_DB)))
     app.state.db = db
+
+    if node_key_path is None:
+        node_key_path = os.environ.get("AGRICHAIN_NODE_KEY")
+    if node_key_path is None:
+        key_dir = Path(db_path).parent if db_path else DEFAULT_DB.parent
+        node_key_path = str(key_dir / "node_key.pem")
+    app.state.node_key = load_or_create_key(node_key_path)
+
     rate_hits: dict[str, list[float]] = {}
 
     if db_path is None:
@@ -539,6 +548,14 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.get("/health")
     def health() -> dict:
         return {"ok": True, "version": 2}
+
+    @app.get("/ledger/root")
+    def ledger_root() -> dict:
+        return signed_root(
+            db.event_hashes(),
+            db.event_height(),
+            app.state.node_key,
+        )
 
     @app.post("/actors", status_code=201)
     def register_actor(request: Request, payload: Any = Body(...)) -> dict:
