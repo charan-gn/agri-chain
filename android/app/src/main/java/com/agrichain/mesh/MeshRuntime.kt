@@ -25,6 +25,14 @@ class MeshRuntime private constructor(context: Context) {
             prefs.edit().putString("senderId", it).apply()
         }
 
+    /**
+     * Meshtastic LoRa transport. Binds to the Meshtastic companion app via AIDL.
+     * [available] returns false when the companion app is not installed, so the
+     * relay simply skips this leg without any error.
+     * India band: nodes must use 865–867 MHz (IN region in Meshtastic app).
+     */
+    val meshtastic = MeshtasticTransport(app)
+
     private val engine = RelayEngine(selfId, store, ledger, mutableListOf(sms)) { line -> log(line) }
 
     @Volatile
@@ -32,6 +40,11 @@ class MeshRuntime private constructor(context: Context) {
 
     init {
         sms.start({ _, _ -> }, { line -> log(line) })
+        meshtastic.start(
+            { envelope, via -> onEnvelope(envelope, via.id) },
+            { line -> log("meshtastic: $line") },
+        )
+        engine.addTransport(meshtastic)
         runCatching {
             app.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(
                 object : ConnectivityManager.NetworkCallback() {

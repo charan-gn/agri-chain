@@ -21,6 +21,11 @@
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
 
+    <!-- Meshtastic companion app visibility (Android 11+). -->
+    <queries>
+        <package android:name="com.geeksville.mesh" />
+    </queries>
+
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
