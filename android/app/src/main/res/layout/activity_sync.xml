@@ -32,6 +32,12 @@
             android:maxLines="1" />
 
         <Button
+            android:id="@+id/findLedgerButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Auto-detect ledger (USB / Wi-Fi)" />
+
+        <Button
             android:id="@+id/usbUrlButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

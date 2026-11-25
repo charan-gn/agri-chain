@@ -30,7 +30,9 @@ if [[ -n "$lan" ]]; then
   echo "  LAN:       http://$lan:$PORT  (phone on Wi-Fi)"
 fi
 echo "  dashboard: http://localhost:$PORT/"
+echo "  discovery: udp 8100 (phones auto-detect on Wi-Fi)"
 echo "  USB phone: adb reverse tcp:$PORT tcp:$PORT, host http://127.0.0.1:$PORT"
 echo
 
+export AGRICHAIN_HTTP_PORT="$PORT"
 exec "${RUN[@]}" app:app --host 0.0.0.0 --port "$PORT" "$@"

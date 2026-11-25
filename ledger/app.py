@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from crypto import (
     verify_signature,
 )
 from db import BatchNotFound, EventConflict, LedgerDb, PrevMismatch
+from discovery import start_discovery
 from barter import (
     BarterError,
     apply_deltas,
@@ -34,6 +36,19 @@ from validation import ValidationError, validate_actor_registration, validate_ev
 
 DEFAULT_DB = Path(__file__).resolve().parent / "ledger.db"
 WEB_DIR = Path(__file__).resolve().parent / "web"
+
+
+def http_port() -> int:
+    configured = os.environ.get("AGRICHAIN_HTTP_PORT") or os.environ.get("PORT")
+    if configured:
+        return int(configured)
+    args = sys.argv
+    for index, arg in enumerate(args):
+        if arg == "--port" and index + 1 < len(args):
+            return int(args[index + 1])
+        if arg.startswith("--port="):
+            return int(arg.split("=", 1)[1])
+    return 8000
 
 
 class ApiError(Exception):
@@ -209,6 +224,11 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(title="AgriChain Ledger", version="0.1")
     db = LedgerDb(db_path or os.environ.get("LEDGER_DB", str(DEFAULT_DB)))
     app.state.db = db
+
+    if db_path is None:
+        @app.on_event("startup")
+        def _start_discovery() -> None:
+            start_discovery(http_port())
 
     app.add_middleware(
         CORSMiddleware,

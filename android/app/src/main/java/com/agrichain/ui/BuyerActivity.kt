@@ -5,17 +5,22 @@ import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.agrichain.buyer.BuyerHistoryActivity
 import com.agrichain.databinding.ActivityBuyerBinding
+import com.agrichain.net.LedgerDiscovery
 import com.agrichain.net.LedgerSettings
 import com.agrichain.qr.ScanActivity
 
 class BuyerActivity : AppCompatActivity() {
 
+    private lateinit var binding: ActivityBuyerBinding
+    private var discovering = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val binding = ActivityBuyerBinding.inflate(layoutInflater)
+        binding = ActivityBuyerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         binding.ledgerUrlInput.setText(LedgerSettings.baseUrl(this))
+        binding.findLedgerButton.setOnClickListener { autoDetect(announce = true) }
 
         binding.scanButton.setOnClickListener {
             startActivity(Intent(this, ScanActivity::class.java))
@@ -35,6 +40,40 @@ class BuyerActivity : AppCompatActivity() {
                     binding.urlStatus.text = "Saved ledger server"
                 }
                 .onFailure { binding.urlStatus.text = it.message }
+        }
+        autoDetect(announce = false)
+    }
+
+    private fun autoDetect(announce: Boolean) {
+        if (discovering) return
+        discovering = true
+        binding.findLedgerButton.isEnabled = false
+        if (announce) binding.urlStatus.text = "Searching for a ledger on USB and Wi-Fi…"
+        LedgerDiscovery.discoverAsync(
+            this,
+            onLog = { line ->
+                runOnUiThread {
+                    if (discovering && !isFinishing && !isDestroyed) {
+                        binding.urlStatus.text = line
+                    }
+                }
+            },
+        ) { found ->
+            runOnUiThread {
+                discovering = false
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                binding.findLedgerButton.isEnabled = true
+                when {
+                    found != null -> {
+                        binding.ledgerUrlInput.setText(found)
+                        binding.urlStatus.text = "Ledger: $found"
+                    }
+                    announce -> {
+                        binding.urlStatus.text =
+                            "No ledger found. Start ./tools/ledger.sh or ./tools/dev.sh."
+                    }
+                }
+            }
         }
     }
 }

@@ -19,10 +19,18 @@ class HttpLedgerGateway(context: Context) : LedgerGateway {
     private val app = context.applicationContext
 
     override fun available(): Boolean {
+        val base = LedgerSettings.baseUrl(app)
+        if (base.startsWith("http://127.0.0.1") || base.startsWith("http://localhost")) {
+            return true // adb reverse works without a validated network
+        }
         val manager = app.getSystemService(ConnectivityManager::class.java) ?: return false
         val network = manager.activeNetwork ?: return false
         val capabilities = manager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
     }
 
     override fun upload(events: List<Event>): UploadResult {

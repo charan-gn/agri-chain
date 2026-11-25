@@ -26,7 +26,7 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T13 | Demo script + polish | done | charan | task-T13-charan | demo/, README.md | all |
 | T14 | SMS radio leg + relay v2 (replaces T12 scope) | done | charan | task-T14-charan | APP/mesh/, APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11, T12 |
 | T15 | Laptop ledger runner + web dashboard + USB phone flow | done | charan | task-T15-charan | tools/, ledger/, APP/net/, APP/data/, README.md | T4, T14 |
-| T16 | Auto-detect ledger + unify prices host | claimed | charan | task-T16-charan | APP/net/, APP/prices/, APP/data/, APP/box/, APP/MainActivity.kt, android/app/src/main/res/layout/, ledger/, tools/, README.md | T15 |
+| T16 | Auto-detect ledger + unify prices host | done | charan | task-T16-charan | APP/net/, APP/prices/, APP/data/, APP/box/, APP/MainActivity.kt, android/app/src/main/res/layout/, ledger/, tools/, README.md | T15 |
 
 ## Contracts
 
@@ -138,6 +138,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-24 17:50] FROM charan → all: claiming T15. Add `tools/ledger.sh` (auto venv + LAN URLs), `tools/phone.sh` (build/install, `adb reverse tcp:8000`, permission grants, launch), `tools/dev.sh` (both), a ledger-served web dashboard at `/`, and a "Use USB" host button in Ledger sync. No contract change; `/stats` and `/events/recent` are additive. | open
 - [2026-11-25 12:00] FROM charan → all: T15 done on task-T15-charan. `./tools/ledger.sh` serves the API and a dashboard at `/` (batches, live events, barter, mandi prices, chain health, batch drill-down). `./tools/dev.sh` starts it, builds/installs the APK over USB, runs `adb reverse tcp:8000 tcp:8000`, grants runtime permissions and launches the app. In the app tap Ledger sync → "Use USB". Tests: 29 ledger (2 new), 51 Android. | open
 - [2026-11-25 12:30] FROM charan → all: claiming T16. Prices kept a private URL store (default `10.0.2.2`) so the T15 USB host never reached that screen. Unify every screen on `LedgerSettings`, add LAN discovery (UDP 8100) plus USB/emulator probing, and auto-save the first healthy ledger. Also stop gating HTTP uploads on validated internet, so `adb reverse` works without Wi-Fi. | open
+- [2026-11-25 13:10] FROM charan → all: T16 done on task-T16-charan. Every screen (prices, sync, buyer, box, mesh, main) now reads and writes `LedgerSettings`, so the USB host reaches prices. On launch and on "Auto-detect ledger" the app probes saved → `127.0.0.1` (adb reverse) → `10.0.2.2` (emulator) → UDP 8100 broadcast, saves the first healthy `/health`, and prices retries once after a failed fetch. `ledger/discovery.py` answers the broadcast with the LAN URL; disable with `AGRICHAIN_DISCOVERY=0`. Upload gating accepts loopback/Wi-Fi so USB needs no validated internet. Tests: 32 ledger (3 new), 57 Android (6 new). | open
 
 ## Decisions log
 
@@ -160,6 +161,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-24 charan: T14 replaces the v1 mesh envelope with compact v2 keys and a shared `Transport` interface. Nearby remains; SMS is the GSM radio leg (text messages, ≤140-char base64 chunks, gateway number in settings); internet is plain HTTP to the ledger. ACKs are relayed like events so any internet node can clear the mesh. The JVM simulator is the proof; phone tests are manual.
 - 2026-11-24 charan: SMS uses `AC1|<msgId>|<idx>/<total>|<base64>` with a 140-char payload (≤160-char SMS), 2 s between sends, and a persisted outbox so a dropped chunk is retried on the next broadcast. ACKs go to the inbound `originatingAddress`, not the configured gateway, and are not added to the seen-set (an ACK can arrive before its event).
 - 2026-11-25 charan: T15 serves the dashboard from FastAPI itself (`/`, `/static`), so there is no second server or CDN and the demo works offline. `/stats` and `/events/recent` are read-only additions. USB testing uses `adb reverse tcp:8000 tcp:8000` plus the app's "Use USB" button (`http://127.0.0.1:8000`); Wi-Fi phones keep using the laptop LAN IP.
+- 2026-11-25 charan: T16 makes `LedgerSettings` the only ledger host on Android; `PriceCache` no longer stores a URL. Discovery order is saved → USB loopback → emulator host → UDP broadcast to port 8100 with the token `AGRICHAIN_DISCOVER`; the ledger replies `{"service":"agrichain","baseUrl":"http://<lan-ip>:<port>"}` and the app saves the first URL whose `/health` returns 200. Loopback and Wi-Fi/Ethernet/cellular/VPN count as usable transports for HTTP uploads, because `adb reverse` has no validated internet.
 
 ## Blockers
 
@@ -182,12 +184,15 @@ Run (updated as tasks land):
 # Ledger + dashboard (T4, T15). Auto-creates .venv if deps are missing.
 ./tools/ledger.sh
 # Dashboard: http://localhost:8000/  ·  API docs: /docs
-# LAN phones: use the printed http://<laptop-ip>:8000 URL.
+# LAN phones: use the printed http://<laptop-ip>:8000 URL, or let the app auto-detect
+# it over UDP 8100 (disable the responder with AGRICHAIN_DISCOVERY=0).
 
-# USB phone (T15): build, install, adb reverse, grant permissions, launch.
+# USB phone (T15, T16): build, install, adb reverse, grant permissions, launch.
 ./tools/dev.sh            # starts the ledger too; Ctrl-C stops it
 # Or run ./tools/ledger.sh in one terminal and ./tools/phone.sh in another.
-# In the app: Ledger sync → "Use USB" → Register actors → Sync events.
+# In the app: "Auto-detect ledger" on the launcher (or Ledger sync → "Use USB").
+# The app probes saved → 127.0.0.1 (USB) → 10.0.2.2 (emulator) → LAN and keeps the
+# first healthy /health. Prices, sync, buyer and box all share that saved host.
 # adb reverse maps phone 127.0.0.1:8000 to this laptop; Wi-Fi is not needed.
 
 # Ledger tests
@@ -212,8 +217,9 @@ cd android && ./gradlew installDebug
 #    so each fix is checked against it.
 #  - "Simulate tamper (demo)" emits a TAMPER event without touching the sensors.
 
-# Mandi prices (T9)
-# Launcher → "Mandi prices"; set the ledger URL, pick a crop/market, "Refresh prices".
+# Mandi prices (T9, T16)
+# Launcher → "Mandi prices"; tap "Auto-detect ledger" (or keep the saved host) and pick a
+# crop/market. A failed fetch retries once through discovery, so USB works without an IP.
 # The ledger seeds 11 crop/market rates and caches snapshots in SQLite; the app keeps
 # the last successful response in SharedPreferences, so the chart still works offline.
 

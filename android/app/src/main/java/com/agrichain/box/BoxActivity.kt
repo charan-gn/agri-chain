@@ -14,6 +14,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.agrichain.core.ActorIdentity
 import com.agrichain.databinding.ActivityBoxBinding
+import com.agrichain.net.LedgerDiscovery
+import com.agrichain.net.LedgerSettings
 import com.agrichain.qr.BatchQrCodec
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -41,6 +43,7 @@ class BoxActivity : AppCompatActivity() {
     private var geofenceLon: Double? = null
     private var geofenceRadiusM = TamperRules.DEFAULT_GEOFENCE_RADIUS_M
     private var geofenceBreached = false
+    private var discovering = false
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
         val contents = result.contents ?: return@registerForActivityResult
@@ -77,7 +80,7 @@ class BoxActivity : AppCompatActivity() {
 
         binding.actorId.text = identity.actorId
         binding.pubKey.text = identity.publicKeySpkiBase64
-        binding.ledgerUrlInput.setText(session.ledgerUrl())
+        binding.ledgerUrlInput.setText(LedgerSettings.baseUrl(this))
         binding.batchIdInput.setText(session.batchId().orEmpty())
         session.batchId()?.let { batchId ->
             boundBatchId = batchId
@@ -85,6 +88,7 @@ class BoxActivity : AppCompatActivity() {
         }
 
         binding.scanButton.setOnClickListener { launchScanner() }
+        binding.findLedgerButton.setOnClickListener { autoDetect() }
         binding.bindButton.setOnClickListener { bindBatch() }
         binding.registerActorButton.setOnClickListener { registerActor() }
         binding.copyKeyButton.setOnClickListener { copyPublicKey() }
@@ -126,6 +130,7 @@ class BoxActivity : AppCompatActivity() {
     private fun registerActor() {
         val url = LedgerClient.normalizeBaseUrl(binding.ledgerUrlInput.text.toString())
         binding.ledgerUrlInput.setText(url)
+        persistLedgerUrl(url)
         binding.registerActorButton.isEnabled = false
         binding.actorStatus.text = "Registering box actor…"
 
@@ -143,7 +148,6 @@ class BoxActivity : AppCompatActivity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 binding.registerActorButton.isEnabled = true
                 result.onSuccess {
-                    session.saveLedgerUrl(url)
                     binding.actorStatus.text = "Box actor registered on the ledger."
                 }.onFailure { error ->
                     binding.actorStatus.text = "Registration failed: ${error.message}"
@@ -160,6 +164,7 @@ class BoxActivity : AppCompatActivity() {
         }
         val url = LedgerClient.normalizeBaseUrl(binding.ledgerUrlInput.text.toString())
         binding.ledgerUrlInput.setText(url)
+        persistLedgerUrl(url)
         binding.bindButton.isEnabled = false
         binding.bindStatus.text = "Checking ledger head…"
 
@@ -168,13 +173,48 @@ class BoxActivity : AppCompatActivity() {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 binding.bindButton.isEnabled = true
-                result.onSuccess { head -> bind(batchId, head, url, "online") }
-                    .onFailure { error -> promptOfflineBind(batchId, url, error) }
+                result.onSuccess { head -> bind(batchId, head, "online") }
+                    .onFailure { error -> promptOfflineBind(batchId, error) }
             }
         }.start()
     }
 
-    private fun promptOfflineBind(batchId: String, url: String, error: Throwable) {
+    private fun persistLedgerUrl(url: String) {
+        runCatching { LedgerSettings.setBaseUrl(this, url) }
+            .onFailure { binding.actorStatus.text = it.message }
+    }
+
+    private fun autoDetect() {
+        if (discovering) return
+        discovering = true
+        binding.findLedgerButton.isEnabled = false
+        binding.actorStatus.text = "Searching for a ledger on USB and Wi-Fi…"
+        LedgerDiscovery.discoverAsync(
+            this,
+            onLog = { line ->
+                runOnUiThread {
+                    if (discovering && !isFinishing && !isDestroyed) {
+                        binding.actorStatus.text = line
+                    }
+                }
+            },
+        ) { found ->
+            runOnUiThread {
+                discovering = false
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                binding.findLedgerButton.isEnabled = true
+                if (found != null) {
+                    binding.ledgerUrlInput.setText(found)
+                    binding.actorStatus.text = "Ledger: $found"
+                } else {
+                    binding.actorStatus.text =
+                        "No ledger found. Run ./tools/ledger.sh (Wi-Fi) or ./tools/phone.sh (USB)."
+                }
+            }
+        }
+    }
+
+    private fun promptOfflineBind(batchId: String, error: Throwable) {
         if (logging) stopLogging()
         val reason = if (error is BatchNotFoundException) {
             "This batch is not on the ledger yet."
@@ -188,16 +228,16 @@ class BoxActivity : AppCompatActivity() {
                     "this phone until the queue syncs."
             )
             .setPositiveButton("Bind offline") { _, _ ->
-                bind(batchId, session.ledgerHead(batchId), url, "offline")
+                bind(batchId, session.ledgerHead(batchId), "offline")
             }
             .setNegativeButton("Cancel") { _, _ -> refreshUi() }
             .show()
     }
 
-    private fun bind(batchId: String, head: String, url: String, mode: String) {
+    private fun bind(batchId: String, head: String, mode: String) {
         boundBatchId = batchId
         ledgerHead = head
-        session.bind(batchId, head, url)
+        session.bind(batchId, head)
         if (logging) {
             gps.stop()
             logging = false

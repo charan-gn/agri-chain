@@ -6,6 +6,8 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
 import com.agrichain.databinding.ActivityPricesBinding
+import com.agrichain.net.LedgerDiscovery
+import com.agrichain.net.LedgerSettings
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -29,6 +31,7 @@ class PricesActivity : AppCompatActivity() {
 
     private var requestSeq = 0
     private var ready = false
+    private var discovering = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,7 +41,7 @@ class PricesActivity : AppCompatActivity() {
         cache = PriceCache(this)
         repository = PriceRepository(cache)
 
-        binding.ledgerUrlInput.setText(cache.ledgerUrl())
+        binding.ledgerUrlInput.setText(LedgerSettings.baseUrl(this))
         binding.cropSpinner.adapter = adapter(crops)
         binding.marketSpinner.adapter = adapter(markets)
 
@@ -67,6 +70,7 @@ class PricesActivity : AppCompatActivity() {
         binding.cropSpinner.onItemSelectedListener = listener
         binding.marketSpinner.onItemSelectedListener = listener
         binding.refreshButton.setOnClickListener { load(refresh = true) }
+        binding.findLedgerButton.setOnClickListener { discoverLedger() }
 
         ready = true
         load(refresh = false)
@@ -80,9 +84,18 @@ class PricesActivity : AppCompatActivity() {
     private fun load(refresh: Boolean) {
         val crop = crops[binding.cropSpinner.selectedItemPosition]
         val market = selectedMarket()
-        val url = PriceUrls.normalizeBaseUrl(binding.ledgerUrlInput.text.toString())
+        val raw = binding.ledgerUrlInput.text.toString().trim()
+        if (raw.isEmpty()) {
+            renderEmpty("Enter the ledger host, or tap Auto-detect ledger.")
+            return
+        }
+        val url = try {
+            LedgerSettings.setBaseUrl(this, PriceUrls.normalizeBaseUrl(raw))
+        } catch (error: IllegalArgumentException) {
+            renderEmpty(error.message ?: "Enter the ledger host")
+            return
+        }
         binding.ledgerUrlInput.setText(url)
-        cache.saveLedgerUrl(url)
         cache.saveSelection(crop, market)
 
         showCached(crop, market)
@@ -90,7 +103,20 @@ class PricesActivity : AppCompatActivity() {
         val seq = ++requestSeq
         setLoading(true, refresh)
         Thread {
-            val result = runCatching { repository.fetch(url, crop, market, refresh) }
+            var result = runCatching { repository.fetch(url, crop, market, refresh) }
+            if (result.isFailure && !LedgerDiscovery.probe(url)) {
+                val found = LedgerDiscovery.discover(this)
+                if (found != null && found != url) {
+                    result = runCatching { repository.fetch(found, crop, market, refresh) }
+                    if (result.isSuccess) {
+                        runOnUiThread {
+                            if (seq == requestSeq && !isFinishing && !isDestroyed) {
+                                binding.ledgerUrlInput.setText(found)
+                            }
+                        }
+                    }
+                }
+            }
             runOnUiThread {
                 if (seq != requestSeq || isFinishing || isDestroyed) return@runOnUiThread
                 setLoading(false, refresh)
@@ -116,6 +142,37 @@ class PricesActivity : AppCompatActivity() {
                 }
             }
         }.start()
+    }
+
+    private fun discoverLedger() {
+        if (discovering) return
+        discovering = true
+        binding.findLedgerButton.isEnabled = false
+        binding.statusText.text = "Searching for a ledger on USB and Wi-Fi…"
+        LedgerDiscovery.discoverAsync(
+            this,
+            onLog = { line ->
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && discovering) {
+                        binding.statusText.text = line
+                    }
+                }
+            },
+        ) { found ->
+            runOnUiThread {
+                discovering = false
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                binding.findLedgerButton.isEnabled = true
+                if (found == null) {
+                    binding.statusText.text =
+                        "No ledger found. Run ./tools/ledger.sh (Wi-Fi) or " +
+                            "./tools/phone.sh (USB), then retry."
+                } else {
+                    binding.ledgerUrlInput.setText(found)
+                    load(refresh = false)
+                }
+            }
+        }
     }
 
     private fun showCached(crop: String, market: String?) {
@@ -180,6 +237,7 @@ class PricesActivity : AppCompatActivity() {
 
     private fun setLoading(loading: Boolean, refresh: Boolean) {
         binding.refreshButton.isEnabled = !loading
+        binding.findLedgerButton.isEnabled = !loading && !discovering
         binding.refreshButton.text = when {
             !loading -> "Refresh prices"
             refresh -> "Refreshing…"

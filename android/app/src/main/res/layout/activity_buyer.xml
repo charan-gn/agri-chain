@@ -74,6 +74,12 @@
             android:layout_height="wrap_content"
             android:text="Save server" />
 
+        <Button
+            android:id="@+id/findLedgerButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Auto-detect ledger (USB / Wi-Fi)" />
+
         <TextView
             android:id="@+id/urlStatus"
             android:layout_width="match_parent"

@@ -1,5 +1,6 @@
 package com.agrichain.box
 
+import com.agrichain.net.LedgerSettings
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -10,7 +11,7 @@ class BatchNotFoundException(message: String) : IOException(message)
 object LedgerClient {
 
     fun normalizeBaseUrl(raw: String): String =
-        raw.trim().trimEnd('/').ifBlank { BoxSession.DEFAULT_LEDGER_URL }
+        raw.trim().trimEnd('/').ifBlank { LedgerSettings.DEFAULT_BASE_URL }
 
     @Throws(IOException::class)
     fun fetchBatchHead(baseUrl: String, batchId: String): String {
