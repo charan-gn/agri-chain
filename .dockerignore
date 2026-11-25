@@ -1,0 +1,16 @@
+.git
+.github
+android
+demo
+webapp
+README.md
+*.md
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+.venv
+**/.venv
+ledger/ledger.db
+ledger/ledger.db-shm
+ledger/ledger.db-wal
+ledger/node_key.pem
