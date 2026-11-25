@@ -13,7 +13,10 @@ android {
         targetSdk = 36
         versionCode = 4
         versionName = "0.4"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
+    sourceSets["androidTest"].assets.srcDir("../../contracts")
 
     buildTypes {
         release {
@@ -47,4 +50,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Real org.json on the JVM test classpath; android.jar only stubs it.
     testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

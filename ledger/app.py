@@ -91,7 +91,10 @@ def append_one(db: LedgerDb, raw: Any) -> dict:
     if not actor:
         raise ApiError(422, "unknown_actor", "actor is not registered")
 
-    canonical = canonical_event(event)
+    try:
+        canonical = canonical_event(event)
+    except ValueError as exc:
+        raise ApiError(400, "bad_event", str(exc))
     if event["hash"] != sha256_hex(canonical):
         raise ApiError(400, "bad_hash", "hash does not match the canonical event")
 
