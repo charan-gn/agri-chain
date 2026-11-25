@@ -19,9 +19,9 @@ class ScanActivity : AppCompatActivity() {
         }
         val batchId = BatchQrCodec.parse(contents)
         if (batchId == null) {
-            binding.result.text = "Not an AgriChain batch QR"
+            binding.result.text = "That is not an AgriChain crop QR"
         } else {
-            binding.result.text = "Valid batch QR\n$batchId"
+            binding.result.text = "QR found! Opening crop check…"
             startActivity(BuyerHistoryActivity.intent(this, batchId))
         }
     }
@@ -30,13 +30,14 @@ class ScanActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityScanBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        binding.backButton.setOnClickListener { finish() }
         binding.scanButton.setOnClickListener { launchScanner() }
     }
 
     private fun launchScanner() {
         val options = ScanOptions()
             .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-            .setPrompt("Scan an AgriChain batch QR")
+            .setPrompt("Point at the farmer's crop QR")
             .setBeepEnabled(false)
             .setOrientationLocked(false)
         scanLauncher.launch(options)

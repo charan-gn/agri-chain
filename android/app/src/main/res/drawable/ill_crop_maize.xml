@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <path
+        android:fillColor="#FFFDE7"
+        android:pathData="M28,3A25,25 0 1,1 27.99,3Z" />
+    <!-- Corn cob -->
+    <path
+        android:fillColor="#FDD835"
+        android:pathData="M28,11C33,11 36,19 36,29C36,37 32,42 28,42C24,42 20,37 20,29C20,19 23,11 28,11Z" />
+    <!-- Kernel grid -->
+    <path
+        android:fillColor="#F9A825"
+        android:pathData="M23,20L33,20L33,22L23,22ZM22,26L34,26L34,28L22,28ZM23,32L33,32L33,34L23,34ZM27,14L29,14L29,39L27,39Z" />
+    <!-- Green husks -->
+    <path
+        android:fillColor="#43A047"
+        android:pathData="M18,24C16,35 20,44 28,46C23,41 21,33 21,25Z" />
+    <path
+        android:fillColor="#2E7D32"
+        android:pathData="M38,24C40,35 36,44 28,46C33,41 35,33 35,25Z" />
+</vector>

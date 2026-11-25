@@ -7,6 +7,7 @@ import com.agrichain.core.ActorIdentity
 import com.agrichain.databinding.ActivitySyncBinding
 import com.agrichain.net.LedgerDiscovery
 import com.agrichain.net.LedgerSettings
+import com.agrichain.ui.UiHelpers
 
 class SyncActivity : AppCompatActivity() {
 
@@ -19,17 +20,20 @@ class SyncActivity : AppCompatActivity() {
         binding = ActivitySyncBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        binding.backButton.setOnClickListener { finish() }
+        UiHelpers.wireToggle(binding.setupHeader, binding.setupBody, binding.setupChevron)
+
         binding.ledgerUrlInput.setText(LedgerSettings.baseUrl(this))
         binding.findLedgerButton.setOnClickListener { autoDetect(announce = true) }
         binding.usbUrlButton.setOnClickListener {
             LedgerSettings.setBaseUrl(this, LedgerSettings.USB_BASE_URL)
             binding.ledgerUrlInput.setText(LedgerSettings.USB_BASE_URL)
-            binding.status.text = "USB ledger selected (adb reverse tcp:8000)"
+            binding.status.text = "USB cable selected (127.0.0.1:8000)"
             binding.status.setTextColor(getColor(R.color.status_neutral))
         }
         binding.saveUrlButton.setOnClickListener {
             if (saveUrl() != null) {
-                binding.status.text = "Ledger server saved"
+                binding.status.text = "Server saved ✓"
                 binding.status.setTextColor(getColor(R.color.status_ok))
             }
         }
@@ -45,7 +49,7 @@ class SyncActivity : AppCompatActivity() {
         discovering = true
         binding.findLedgerButton.isEnabled = false
         if (announce) {
-            binding.status.text = "Searching for a ledger on USB and Wi-Fi…"
+            binding.status.text = "Looking for server on USB and Wi-Fi…"
             binding.status.setTextColor(getColor(R.color.status_neutral))
         }
         LedgerDiscovery.discoverAsync(
@@ -66,12 +70,12 @@ class SyncActivity : AppCompatActivity() {
                 when {
                     found != null -> {
                         binding.ledgerUrlInput.setText(found)
-                        binding.status.text = "Ledger: $found"
+                        binding.status.text = "Connected: $found"
                         binding.status.setTextColor(getColor(R.color.status_ok))
                     }
                     announce -> {
                         binding.status.text =
-                            "No ledger found. Start ./tools/ledger.sh or ./tools/dev.sh."
+                            "No server found. Start ./tools/ledger.sh or ./tools/dev.sh."
                         binding.status.setTextColor(getColor(R.color.status_alert))
                     }
                 }
@@ -94,7 +98,7 @@ class SyncActivity : AppCompatActivity() {
 
     private fun registerActors() {
         val url = saveUrl() ?: return
-        setBusy(true, "Registering actors…")
+        setBusy(true, "Registering phone IDs…")
         Thread {
             try {
                 LedgerSync(this, LedgerApi(url)).registerActors { line ->
@@ -102,7 +106,7 @@ class SyncActivity : AppCompatActivity() {
                 }
                 ui {
                     appendLog("Actors ready on $url")
-                    setBusy(false, "Actors registered")
+                    setBusy(false, "Phone IDs registered ✓")
                     loadIdentities()
                 }
             } catch (error: Exception) {
@@ -116,7 +120,7 @@ class SyncActivity : AppCompatActivity() {
 
     private fun sync() {
         val url = saveUrl() ?: return
-        setBusy(true, "Syncing events…")
+        setBusy(true, "Uploading records…")
         Thread {
             try {
                 val sync = LedgerSync(this, LedgerApi(url))
@@ -124,13 +128,13 @@ class SyncActivity : AppCompatActivity() {
                 val report = sync.sync { line -> ui { appendLog(line) } }
                 ui {
                     appendLog("Uploaded ${report.uploaded}, failed ${report.failed}, pending ${report.pending}")
-                    setBusy(false, "Sync finished")
+                    setBusy(false, "Upload complete ✓")
                     refreshPending()
                 }
             } catch (error: Exception) {
                 ui {
                     appendLog("Error: ${error.message}")
-                    setBusy(false, "Sync failed")
+                    setBusy(false, "Upload failed")
                 }
             }
         }.start()
@@ -138,7 +142,11 @@ class SyncActivity : AppCompatActivity() {
 
     private fun refreshPending() {
         val pending = runCatching { SyncStore(this).pendingCount() }.getOrDefault(0)
-        binding.pending.text = "$pending event(s) waiting to sync"
+        binding.pending.text = if (pending == 0) {
+            "Everything is saved ✓"
+        } else {
+            "$pending item(s) waiting to upload"
+        }
     }
 
     private fun saveUrl(): String? {

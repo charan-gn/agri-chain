@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -11,10 +12,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.agrichain.R
 import com.agrichain.databinding.ActivityBoxBinding
 import com.agrichain.net.LedgerDiscovery
 import com.agrichain.net.LedgerSettings
 import com.agrichain.qr.BatchQrCodec
+import com.agrichain.ui.UiHelpers
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import java.text.SimpleDateFormat
@@ -33,10 +36,10 @@ class BoxActivity : AppCompatActivity() {
         val contents = result.contents ?: return@registerForActivityResult
         val batchId = BatchQrCodec.parse(contents)
         if (batchId == null) {
-            toast("Not an AgriChain batch QR")
+            toast("Not an AgriChain crop QR")
         } else {
             binding.batchIdInput.setText(batchId)
-            binding.bindStatus.text = "Scanned. Bind to fetch the ledger head."
+            binding.bindStatus.text = "QR scanned! Tap Connect to lock this box to the crop."
         }
     }
 
@@ -50,7 +53,7 @@ class BoxActivity : AppCompatActivity() {
         if (hasLocationPermission()) {
             startLogging()
         } else {
-            toast("Location permission is required to log GPS")
+            toast("Location permission is needed to track GPS")
         }
     }
 
@@ -59,17 +62,20 @@ class BoxActivity : AppCompatActivity() {
         binding = ActivityBoxBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        binding.backButton.setOnClickListener { finish() }
+        UiHelpers.wireToggle(binding.setupHeader, binding.setupBody, binding.setupChevron)
+
         engine = BoxRuntime.get(this)
         engine.onChange = { refreshUi() }
         engine.onMessage = { message -> toast(message) }
 
-        binding.actorId.text = engine.identity.actorId
-        binding.pubKey.text = engine.identity.publicKeySpkiBase64
+        binding.actorId.text = "Box ID: ${engine.identity.actorId}"
+        binding.pubKey.text = "Key: ${engine.identity.publicKeySpkiBase64}"
         binding.ledgerUrlInput.setText(LedgerSettings.baseUrl(this))
         binding.batchIdInput.setText(engine.boundBatchId.orEmpty())
         binding.bindStatus.text = engine.boundBatchId?.let {
-            "Bound from the saved session."
-        } ?: "Not bound. Scan the batch QR, then bind while online."
+            "Connected from last session."
+        } ?: "Not connected yet. Scan the crop QR above."
 
         binding.scanButton.setOnClickListener { launchScanner() }
         binding.findLedgerButton.setOnClickListener { autoDetect() }
@@ -94,7 +100,7 @@ class BoxActivity : AppCompatActivity() {
         val head = intent.getStringExtra("ledgerHead").orEmpty()
         engine.bind(batchId, head)
         binding.batchIdInput.setText(batchId)
-        binding.bindStatus.text = "Bound from the adb intent (head=${short(head)})."
+        binding.bindStatus.text = "Connected from adb (head=${short(head)})."
         Log.i(TAG, "box activity: bound from intent batch=$batchId autoStart=" +
             intent.getBooleanExtra("autoStart", false))
         if (intent.getBooleanExtra("autoStart", false)) {
@@ -114,7 +120,7 @@ class BoxActivity : AppCompatActivity() {
         scanLauncher.launch(
             ScanOptions()
                 .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                .setPrompt("Scan the batch QR")
+                .setPrompt("Scan the crop QR")
                 .setBeepEnabled(false)
                 .setOrientationLocked(false)
         )
@@ -133,7 +139,7 @@ class BoxActivity : AppCompatActivity() {
         binding.ledgerUrlInput.setText(url)
         persistLedgerUrl(url)
         binding.registerActorButton.isEnabled = false
-        binding.actorStatus.text = "Registering box actor…"
+        binding.actorStatus.text = "Registering box on server…"
 
         Thread {
             val result = runCatching {
@@ -149,7 +155,7 @@ class BoxActivity : AppCompatActivity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 binding.registerActorButton.isEnabled = true
                 result.onSuccess {
-                    binding.actorStatus.text = "Box actor registered on the ledger."
+                    binding.actorStatus.text = "Box registered on server ✓"
                 }.onFailure { error ->
                     binding.actorStatus.text = "Registration failed: ${error.message}"
                 }
@@ -160,14 +166,14 @@ class BoxActivity : AppCompatActivity() {
     private fun bindBatch() {
         val batchId = binding.batchIdInput.text.toString().trim()
         if (!isUuidV4(batchId)) {
-            binding.batchIdInput.error = "Enter a UUIDv4 batch ID"
+            binding.batchIdInput.error = "Scan a crop QR or enter a valid batch code"
             return
         }
         val url = LedgerClient.normalizeBaseUrl(binding.ledgerUrlInput.text.toString())
         binding.ledgerUrlInput.setText(url)
         persistLedgerUrl(url)
         binding.bindButton.isEnabled = false
-        binding.bindStatus.text = "Checking ledger head…"
+        binding.bindStatus.text = "Connecting to crop…"
 
         Thread {
             val result = runCatching { LedgerClient.fetchBatchHead(url, batchId) }
@@ -189,7 +195,7 @@ class BoxActivity : AppCompatActivity() {
         if (discovering) return
         discovering = true
         binding.findLedgerButton.isEnabled = false
-        binding.actorStatus.text = "Searching for a ledger on USB and Wi-Fi…"
+        binding.actorStatus.text = "Looking for server on USB and Wi-Fi…"
         LedgerDiscovery.discoverAsync(
             this,
             onLog = { line ->
@@ -206,10 +212,10 @@ class BoxActivity : AppCompatActivity() {
                 binding.findLedgerButton.isEnabled = true
                 if (found != null) {
                     binding.ledgerUrlInput.setText(found)
-                    binding.actorStatus.text = "Ledger: $found"
+                    binding.actorStatus.text = "Connected: $found"
                 } else {
                     binding.actorStatus.text =
-                        "No ledger found. Run ./tools/ledger.sh (Wi-Fi) or ./tools/phone.sh (USB)."
+                        "No server found. Run ./tools/ledger.sh (Wi-Fi) or ./tools/phone.sh (USB)."
                 }
             }
         }
@@ -218,17 +224,17 @@ class BoxActivity : AppCompatActivity() {
     private fun promptOfflineBind(batchId: String, error: Throwable) {
         if (engine.logging) stopLogging()
         val reason = if (error is BatchNotFoundException) {
-            "This batch is not on the ledger yet."
+            "This crop is not on the server yet."
         } else {
-            "Could not reach the ledger (${error.message})."
+            "Could not reach the server (${error.message})."
         }
         AlertDialog.Builder(this)
-            .setTitle("Bind offline?")
+            .setTitle("Connect offline?")
             .setMessage(
-                "$reason\n\nOffline GPS events chain from the last local head and stay signed on " +
-                    "this phone until the queue syncs."
+                "$reason\n\nGPS pins and tamper alerts will stay saved safely on this phone " +
+                    "until you upload later."
             )
-            .setPositiveButton("Bind offline") { _, _ ->
+            .setPositiveButton("Connect offline") { _, _ ->
                 bind(batchId, engine.sessionHead(batchId), "offline")
             }
             .setNegativeButton("Cancel") { _, _ -> refreshUi() }
@@ -238,13 +244,13 @@ class BoxActivity : AppCompatActivity() {
     private fun bind(batchId: String, head: String, mode: String) {
         engine.bind(batchId, head)
         refreshUi()
-        binding.bindStatus.text = "Bound ($mode). Ledger head: ${short(head)}"
-        toast("Bound to batch ${batchId.take(8)}…")
+        binding.bindStatus.text = "Connected ($mode) ✓"
+        toast("Connected to crop ${batchId.take(8)}…")
     }
 
     private fun ensurePermissionAndStart() {
         if (engine.boundBatchId == null) {
-            toast("Bind a batch first")
+            toast("Connect a crop first (Step 1)")
             return
         }
         if (hasLocationPermission()) {
@@ -262,7 +268,7 @@ class BoxActivity : AppCompatActivity() {
     private fun startLogging() {
         if (engine.boundBatchId == null) return
         runCatching { BoxService.start(this) }
-            .onFailure { toast("Could not start the box service: ${it.message}") }
+            .onFailure { toast("Could not start tracking: ${it.message}") }
         binding.toggleButton.postDelayed({ refreshUi() }, 400)
     }
 
@@ -278,24 +284,24 @@ class BoxActivity : AppCompatActivity() {
             return
         }
         if (engine.boundBatchId == null) {
-            toast("Bind a batch first")
+            toast("Connect a crop first (Step 1)")
             return
         }
         if (!hasLocationPermission()) {
-            toast("Location permission is required to run the box service")
+            toast("Location permission is needed to run the box guard")
             return
         }
         engine.armTamper()
         if (!BoxService.running) {
             runCatching { BoxService.start(this) }
-                .onFailure { toast("Could not start the box service: ${it.message}") }
+                .onFailure { toast("Could not start box guard: ${it.message}") }
         }
         refreshUi()
     }
 
     private fun logCurrentFix() {
         if (engine.boundBatchId == null) {
-            toast("Bind a batch first")
+            toast("Connect a crop first (Step 1)")
             return
         }
         if (!hasLocationPermission()) {
@@ -312,11 +318,11 @@ class BoxActivity : AppCompatActivity() {
 
     private fun setGeofenceHere() {
         if (engine.boundBatchId == null) {
-            toast("Bind a batch first")
+            toast("Connect a crop first (Step 1)")
             return
         }
         if (!hasLocationPermission()) {
-            toast("Location permission is required for the geofence")
+            toast("Location permission is needed for the safe zone")
             return
         }
         engine.setGeofenceHere()
@@ -324,32 +330,42 @@ class BoxActivity : AppCompatActivity() {
 
     private fun showSimulateTamper() {
         if (engine.boundBatchId == null) {
-            toast("Bind a batch first")
+            toast("Connect a crop first (Step 1)")
             return
         }
         val kinds = arrayOf("movement", "light", "proximity", "geofence")
         AlertDialog.Builder(this)
-            .setTitle("Simulate tamper")
+            .setTitle("Test tamper alarm")
             .setItems(kinds) { _, which -> engine.simulateTamper(kinds[which]) }
             .show()
     }
 
     private fun refreshUi() {
         val batchId = engine.boundBatchId
-        binding.toggleButton.isEnabled = batchId != null
-        binding.fixNowButton.isEnabled = batchId != null
-        binding.toggleButton.text = if (engine.logging) "Stop logging" else "Start logging"
-        binding.tamperToggleButton.isEnabled = batchId != null
-        binding.setGeofenceButton.isEnabled = batchId != null
-        binding.simulateTamperButton.isEnabled = batchId != null
+        val ready = batchId != null
+        binding.toggleButton.isEnabled = ready
+        binding.fixNowButton.isEnabled = ready
+        binding.tamperToggleButton.isEnabled = ready
+        binding.setGeofenceButton.isEnabled = ready
+        binding.simulateTamperButton.isEnabled = ready
+
+        binding.toggleButton.text =
+            if (engine.logging) "Stop GPS Tracking" else "Start GPS Tracking"
+        binding.toggleButton.backgroundTintList = ColorStateList.valueOf(
+            getColor(if (engine.logging) R.color.alert_red else R.color.brand_green)
+        )
+
         binding.tamperToggleButton.text =
-            if (engine.tamperArmed) "Disarm tamper detection" else "Arm tamper detection"
+            if (engine.tamperArmed) "Guard is ON (Tap to Turn Off)" else "Turn Guard ON"
+        binding.tamperToggleButton.backgroundTintList = ColorStateList.valueOf(
+            getColor(if (engine.tamperArmed) R.color.brand_green else R.color.box_amber)
+        )
 
         if (batchId == null) {
-            binding.bindStatus.text = "Not bound. Scan the batch QR, then bind while online."
+            binding.bindStatus.text = "Not connected. Scan the crop QR above."
             binding.chainStatus.text = ""
-            binding.fixStatus.text = "No batch bound."
-            binding.tamperStatus.text = "Not bound. Arm tamper detection after binding a batch."
+            binding.fixStatus.text = "Connect a crop in Step 1 first."
+            binding.tamperStatus.text = "Connect a crop in Step 1 first."
             binding.eventLog.text = ""
             return
         }
@@ -360,30 +376,26 @@ class BoxActivity : AppCompatActivity() {
         val tamperEvents = batchEvents.filter { it.type == "TAMPER" }
         val lastGps = gpsEvents.lastOrNull()
 
-        binding.bindStatus.text = "Bound: $batchId"
+        binding.bindStatus.text = "Connected to crop: ${batchId.take(8)}…"
         binding.chainStatus.text =
             "ledger head: ${short(engine.ledgerHead)}\nlocal head:  ${short(localHead)}"
         binding.fixStatus.text = if (lastGps == null) {
-            "No GPS fixes yet."
+            "No location pins yet."
         } else {
-            "GPS fixes: ${gpsEvents.size}\nLast: ${lastGps.lat}, ${lastGps.lon} " +
-                "(±${lastGps.data["accuracyM"]} m)"
+            "${gpsEvents.size} location pin(s) saved · Last ±${lastGps.data["accuracyM"]} m"
         }
 
         val fenceLat = engine.geofenceLat
         val fenceLon = engine.geofenceLon
         binding.tamperStatus.text = buildString {
-            append("Sensors: ${engine.sensorSummary()}")
-            append(if (engine.tamperArmed) " · armed" else " · disarmed")
+            append(if (engine.tamperArmed) "Guard is ON ✓" else "Guard is OFF")
+            append(" · Sensors: ${engine.sensorSummary()}")
             if (fenceLat != null && fenceLon != null) {
-                append("\nGeofence: ${engine.geofenceRadiusM.toInt()} m around ")
-                append(GpsEvents.format(fenceLat))
-                append(", ")
-                append(GpsEvents.format(fenceLon))
+                append("\nSafe zone set: ${engine.geofenceRadiusM.toInt()} m radius")
             } else {
-                append("\nGeofence: not set (uses the current fix when you tap the button)")
+                append("\nSafe zone not set yet")
             }
-            append("\nTamper events: ${tamperEvents.size}")
+            append("\nAlarms triggered: ${tamperEvents.size}")
         }
 
         binding.eventLog.text = batchEvents.takeLast(12).joinToString("\n") { event ->

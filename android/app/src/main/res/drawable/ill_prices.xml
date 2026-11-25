@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <!-- Soft teal circle -->
+    <path
+        android:fillColor="#E0F2F1"
+        android:pathData="M36,4A32,32 0 1,1 35.99,4Z" />
+    <!-- Chart bars -->
+    <path
+        android:fillColor="#80CBC4"
+        android:pathData="M18,41L26,41L26,54L18,54Z" />
+    <path
+        android:fillColor="#26A69A"
+        android:pathData="M31,32L39,32L39,54L31,54Z" />
+    <path
+        android:fillColor="#00695C"
+        android:pathData="M44,22L52,22L52,54L44,54Z" />
+    <!-- Gold coin -->
+    <path
+        android:fillColor="#FFB300"
+        android:pathData="M24,14A10,10 0 1,1 23.99,14Z" />
+    <path
+        android:fillColor="#FFF8E1"
+        android:pathData="M20,19L28,19L28,21L20,21ZM20,23L27,23L27,25L20,25ZM23,19L25,19L25,30L23,30Z" />
+</vector>

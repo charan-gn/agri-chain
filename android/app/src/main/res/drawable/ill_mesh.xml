@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <!-- Soft purple circle -->
+    <path
+        android:fillColor="#F3E5F5"
+        android:pathData="M36,4A32,32 0 1,1 35.99,4Z" />
+    <!-- Left phone -->
+    <path
+        android:fillColor="#6A1B9A"
+        android:pathData="M16,25C16,23.3 17.3,22 19,22L29,22C30.7,22 32,23.3 32,25L32,49C32,50.7 30.7,52 29,52L19,52C17.3,52 16,50.7 16,49Z" />
+    <path
+        android:fillColor="#E1BEE7"
+        android:pathData="M18.5,26L29.5,26L29.5,46L18.5,46Z" />
+    <!-- Right phone -->
+    <path
+        android:fillColor="#8E24AA"
+        android:pathData="M40,25C40,23.3 41.3,22 43,22L53,22C54.7,22 56,23.3 56,25L56,49C56,50.7 54.7,52 53,52L43,52C41.3,52 40,50.7 40,49Z" />
+    <path
+        android:fillColor="#E1BEE7"
+        android:pathData="M42.5,26L53.5,26L53.5,46L42.5,46Z" />
+    <!-- Signal waves -->
+    <path
+        android:strokeColor="#FF8F00"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M33,31C35,33 37,33 39,31M31,37C34,40 38,40 41,37" />
+</vector>

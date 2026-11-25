@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <!-- Soft blue circle -->
+    <path
+        android:fillColor="#E1F5FE"
+        android:pathData="M36,4A32,32 0 1,1 35.99,4Z" />
+    <!-- Shopping basket body -->
+    <path
+        android:fillColor="#0277BD"
+        android:pathData="M18,32L54,32L50,53C49.6,55 48,56 46,56L26,56C24,56 22.4,55 22,53Z" />
+    <!-- Basket rim -->
+    <path
+        android:fillColor="#01579B"
+        android:pathData="M15,28C15,26.3 16.3,25 18,25L54,25C55.7,25 57,26.3 57,28L57,32L15,32Z" />
+    <!-- Handle -->
+    <path
+        android:strokeColor="#01579B"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M24,25C24,18 29,14 36,14C43,14 48,18 48,25" />
+    <!-- Check circle badge -->
+    <path
+        android:fillColor="#43A047"
+        android:pathData="M49,40A10,10 0 1,1 48.99,40Z" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M44,50L47.5,53.5L55,46" />
+</vector>
