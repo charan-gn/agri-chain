@@ -26,8 +26,8 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T12 | Mesh relay (Nearby Connections) | done | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
 | T13 | Demo script + polish | done | charan | task-T13-charan | demo/, README.md | all |
 | T14 | SMS radio leg + relay v2 (replaces T12 scope) | done | charan | task-T14-charan | APP/mesh/, APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11, T12 |
-| T15 | Contract v2: per-actor chains, BIND, permissions, admin token, pagination (docs only) | claimed | Laasya | task-T15-laasya | README.md | — |
-| T16 | Device readiness: permissions, box foreground service, SMS default SIM, scripts/dev.sh | claimed | charan | task-T16-device-readiness-charan | APP/box/, APP/mesh/, APP/MainActivity.kt, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{main,box,mesh}.xml, android/app/build.gradle.kts, scripts/dev.sh, README.md | — |
+| T15 | Contract v2: per-actor chains, BIND, permissions, admin token, pagination (docs only) | done | Laasya | task-T15-laasya | README.md | — |
+| T16 | Device readiness: permissions, box foreground service, SMS default SIM, scripts/dev.sh | done | charan | task-T16-device-readiness-charan | APP/box/, APP/mesh/, APP/core/Permissions.kt, APP/MainActivity.kt, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{main,box,mesh}.xml, android/app/src/main/res/drawable/, android/app/build.gradle.kts, scripts/dev.sh, README.md | — |
 | T17 | Canonical JSON vectors + on-device parity | open | — | — | contracts/, ledger/tests/, android/app/src/test/, android/app/src/androidTest/ | — |
 | T18 | Remove mandi, add token price (median20) | open | — | — | ledger/prices.py, ledger/app.py, ledger/tests/, APP/prices/, layouts, manifest, demo/seed.py, README.md | — |
 | T19 | Ledger v2: chains, permissions, BIND, admin token, pagination, verify | open | — | — | ledger/ | T15 |
@@ -39,86 +39,171 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 
 ## Contracts
 
-v1, frozen at T1. Change only with a Decisions Log entry and an Inbox notice to everyone affected. Base URL `http://<host>:8000`, JSON UTF-8. Errors: `{"error":"code","detail":"..."}`.
+v2 (audit round 2). Change only with a Decisions Log entry and an Inbox notice to everyone affected. Base URL `http://<host>:8000`, JSON UTF-8. Errors: `{"error":"code","detail":"...","retry":true|false}`. v1 events remain readable; v2 writers use per-chain heads and the permission matrix below.
 
-### Identifiers and units
+### Identifiers, units and time
 
 - `batchId`: UUIDv4. `actorId`: `farmer:<uuid>` | `buyer:<uuid>` | `box:<uuid>`.
-- Tokens: integer kilograms. 1 token = 1 kg. `grade` (A/B/C) is metadata in v1.
-- `ts`: Unix epoch milliseconds (integer).
+- Tokens: integer kilograms. 1 token = 1 kg. `grade` is A/B/C metadata and part of the price key.
+- `ts`: Unix epoch milliseconds (integer), device clock. The ledger stores `receivedAt` and rejects `ts` more than 5 minutes in the future or 30 days in the past.
 - `lat` / `lon`: decimal-degree **strings** with exactly 6 decimals, or `null`. Fixed strings keep canonical JSON identical in Kotlin and Python.
 - No floats anywhere in `data`: integers only. Prices in paise, weights in kg, distance in metres, speed in cm/s.
+- Strings are UTF-8. Object keys are ASCII printable; string **values** may be non-ASCII (Telugu, Hindi, emoji). Canonical JSON emits non-ASCII as raw UTF-8, never `\uXXXX` escapes; control characters use the standard JSON escapes. `contracts/vectors.json` is the parity suite (T17).
 
-### Event
+### Event v2
 
 ```json
 {"eventId":"uuid","batchId":"uuid","type":"GPS","actorId":"box:uuid",
  "ts":1764000000123,"lat":"17.385044","lon":"78.486671",
- "data":{"accuracyM":8},"prevHash":"<hex>","hash":"<hex>","sig":"<base64>"}
+ "data":{"accuracyM":8,"mock":false},"prevHash":"<hex>","hash":"<hex>","sig":"<base64>"}
 ```
 
-Types: `REGISTER | TRANSFER | GPS | TAMPER | DELIVER | BARTER | PRICE`.
+Types: `REGISTER | BIND | TRANSFER | GPS | TAMPER | DELIVER | BARTER`. `PRICE` is removed in v2 (T18); the ledger rejects it with `400 price_removed`.
 
-| type | `data` fields |
-|------|---------------|
-| REGISTER | `crop` str, `grade` "A"/"B"/"C", `weightKg` int. Genesis only (`prevHash=""`). Mints `weightKg` tokens to `actorId`. |
-| TRANSFER | `toActorId` str, `tokens` int, `pricePerKgPaise` int? Moves tokens. Balance must cover it. |
-| GPS | `accuracyM` int. `lat`/`lon` required. |
-| TAMPER | `kind` "movement" / "light" / "proximity" / "geofence", `detail` str? |
-| DELIVER | `toActorId` str?, `note` str?. |
-| BARTER | `offerId` uuid, `action` "offer"/"accept"/"cancel", `withActorId` str, `giveKg` int, `wantBatchId` str, `wantKg` int. |
-| PRICE | `crop` str, `market` str, `pricePerKgPaise` int, `source` str. Use `batchId="market"`; not shown in batch history. |
+The signed fields are unchanged from v1: `{eventId,batchId,type,actorId,ts,lat,lon,data,prevHash}`. The chain key is `(batchId, actorId, stream)`; `stream` is derived from the type (`trace` for `GPS`, `main` for everything else) and is not part of the signed bytes. The ledger adds `chainSeq` and `receivedAt` to reads.
 
-Canonical bytes = UTF-8 JSON of `{eventId,batchId,type,actorId,ts,lat,lon,data,prevHash}` with keys sorted A-Z at every level, separators `,` and `:`, no extra whitespace, ASCII only. Exclude `hash` and `sig`.
+| type | allowed signer | chain | `data` fields |
+|------|----------------|-------|---------------|
+| REGISTER | farmer | main | `crop` str, `grade` "A"/"B"/"C", `weightKg` int 1..100000. Genesis only (`prevHash=""`); batch must be unused. Mints `weightKg` tokens to `actorId`. |
+| BIND | current batch owner | main | `boxId` box actor or null, `expiresAt` int? A BIND replaces the previous binding; `boxId:null` unbinds. Signed by the owner. |
+| TRANSFER | current holder | main | `toActorId` str, `tokens` int, `pricePerKgPaise` int?, `grade` "A"/"B"/"C"? Moves tokens. Balance must cover it. Priced transfers are **reported** trade data, not attested. |
+| GPS | currently bound box | trace | `accuracyM` int, `mock` bool? `lat`/`lon` required. |
+| TAMPER | currently bound box | main | `kind` "movement"/"light"/"proximity"/"geofence"/"gps_off"/"mock_location"/"power", `detail` str?, `traceHead` hex?, `lastLat`/`lastLon` str?. |
+| DELIVER | bound box or current holder | main | `toActorId` str?, `note` str?. |
+| BARTER | current holder | main | `offerId` uuid, `action` "offer"/"accept"/"cancel", `withActorId` str, `giveKg` int, `wantBatchId` str, `wantKg` int. |
+
+**Owner/holder.** The current owner is the actor with the largest token balance for the batch; ties go to the most recent transfer. `BIND`, `TRANSFER`, `BARTER` and holder-`DELIVER` require the signer to be the holder at append time. `REGISTER` is farmer-only. `GPS`/`TAMPER` are box-only and only after a BIND for that batch.
+
+**BIND.** The farmer (or later owner) signs `BIND{boxId}` on its own `main` chain. The box does not need the owner's head; its GPS/TAMPER chains are independent. The latest BIND wins. A box may be bound to several batches. `409 unbound_box` is retryable: the box should wait for the BIND to sync, then retry.
+
+**Chain rule.** One linear chain per `(batchId, actorId, stream)`, each with its own genesis `prevHash=""`. The server appends only if `prevHash` equals that chain's head, else `409 prev_mismatch` with `{chain:{actorId,stream},head,chainSeq}`. `chainSeq` is server-assigned (starts at 1 per chain), returned in reads, and is not signed. Relay events unchanged; never re-sign. On `prev_mismatch`, refetch the chain head and create a **new** event (new `eventId`, new `ts`) with the new `prevHash`; discard the old signed event. This is what keeps an offline box and an online farmer from destroying each other's evidence (C2).
+
+**Canonical bytes.** UTF-8 JSON of `{eventId,batchId,type,actorId,ts,lat,lon,data,prevHash}` with keys sorted A-Z at every level, separators `,` and `:`, no extra whitespace. Keys are ASCII printable; string values are UTF-8 and non-ASCII is emitted raw. Integers are signed 64-bit; floats are rejected. Exclude `hash` and `sig`.
 `hash` = lowercase hex SHA-256 of canonical bytes. `sig` = base64 DER ECDSA P-256/SHA-256 over the canonical bytes. Public key = base64 SPKI DER, registered while online.
 
-Test vector:
+Test vector (unchanged; non-ASCII cases live in `contracts/vectors.json`):
 
 ```
 canonical = {"actorId":"farmer:33333333-3333-4333-8333-333333333333","batchId":"22222222-2222-4222-8222-222222222222","data":{"crop":"wheat","grade":"A","weightKg":100},"eventId":"11111111-1111-4111-8111-111111111111","lat":null,"lon":null,"prevHash":"","ts":1764000000000,"type":"REGISTER"}
 sha256 = cfad1baad5f9915b39aba2d330ca28b79feb12706d275fc7533c376361ebed80
 ```
 
-Chain rule: one linear chain per `batchId`; genesis `prevHash=""`. The server appends only if `prevHash` equals the current batch head, else `409 prev_mismatch`. One offline writer per batch at a time; the box becomes that writer when it binds after the last sync. Relay events unchanged; never re-sign.
+**Retry policy.**
 
-### Ledger REST
+| HTTP | error | retry? | action |
+|------|-------|--------|--------|
+| 409 | `prev_mismatch` | yes | refetch this chain's head; create and sign a new event with the new `prevHash`; never mutate the old signed event |
+| 409 | `unbound_box` | yes | wait for the owner's `BIND` to sync, then retry |
+| 409 | `batch_unknown` | yes | wait for `REGISTER`, then retry |
+| 409 | `insufficient_balance`, `offer_not_open`, `offer_mismatch`, `not_counterparty`, `duplicate_offer` | no | fix or discard the event |
+| 400 | `bad_hash`, `bad_sig`, `bad_event`, `price_removed` | no | discard |
+| 403 | `forbidden` | no | wrong signer/permission |
+| 422 | `unknown_actor`, validation | no | register the actor or fix the fields |
+| network | — | yes | exponential backoff 1 s → 60 s, jitter |
+
+**Admin token.** `POST /actors` and `/admin/*` require `X-Admin-Token` equal to `AGRICHAIN_ADMIN_TOKEN`. For local demos `AGRICHAIN_DEV=1` sets the default `dev-admin-token`; if the variable is unset, actor registration is closed. `POST /events` is authorized by signatures, not the admin token. `/prices/refresh` is removed. `/actors` and `/events` are rate-limited per IP (default 60/min, `AGRICHAIN_RATE_LIMIT`).
+
+### Ledger REST v2
 
 | Method + path | Body / query | Response |
 |---------------|--------------|----------|
-| `GET /health` | — | `{"ok":true}` |
-| `GET /` or `/dashboard` | — | HTML dashboard: batches, live events, barter, prices, chain health |
+| `GET /health` | — | `{"ok":true,"version":2}` |
+| `GET /` or `/dashboard` | — | HTML dashboard: batches, live events, barter, token prices, chain health |
 | `GET /static/*` | — | dashboard CSS/JS (no CDN, works offline) |
-| `POST /actors` | `{"actorId","name","role","pubKey"}` | `201 {"actorId"}`; `409` if key differs |
+| `POST /actors` | admin token; `{"actorId","name","role","pubKey"}` | `201 {"actorId"}`; `409` if key differs; `401` without token |
 | `GET /actors/{actorId}` | — | `{"actorId","name","role","pubKey"}` |
-| `POST /events` | one Event | `201 {"ok":true,"batchId","head","seq"}`; `400` bad hash/sig; `409 {"error":"prev_mismatch","head":"..."}`; `422` unknown actor |
-| `POST /events/bulk` | `{"events":[Event,...]}` | `200 {"results":[{"eventId","ok","status","error"?}]}`, appended in order |
-| `GET /events?batchId=<id>` | — | `{"batchId","head","events":[Event,...]}` in chain order |
-| `GET /events/recent?limit=20` | limit 1–100 | `{"events":[Event + seq + crop],"updatedAt":ms}` newest first, all batches |
+| `POST /events` | one Event | `201 {"ok":true,"batchId","chain":{"actorId","stream","head","chainSeq"},"receivedAt"}`; `400` bad hash/sig/fields; `403 forbidden`; `409 prev_mismatch` / `unbound_box` / `batch_unknown` / `insufficient_balance`; `422 unknown_actor` |
+| `POST /events/bulk` | `{"events":[Event,...]}` | `200 {"results":[{"eventId","ok","status","error"?,"retry":bool}]}`, appended in order; a failed event does not block later independent chains |
+| `GET /events?batchId=&actorId=&stream=&limit=200&before=<chainSeq>` | `limit` 1–200; `before` exclusive | `{"batchId","chain"?:{"actorId","stream"},"events":[Event + chainSeq + receivedAt],"nextBefore"?:int}` newest first |
+| `GET /events/recent?limit=20` | limit 1–100 | `{"events":[Event + chainSeq + crop],"updatedAt":ms}` newest first, all chains |
 | `GET /stats?limit=20` | limit 1–100 | `{"actors","batches","events","tamperEvents","validChains","recent","updatedAt"}` |
-| `GET /batches/{batchId}` | — | BatchSummary with `events` |
+| `GET /batches/{batchId}` | — | BatchSummary with latest 200 events, `eventCount`, `chains`, `heartbeatGaps`, `mockCount` |
 | `GET /batches?owner=<actorId>` | — | `{"batches":[BatchSummary]}` without `events` |
-| `GET /batches/{batchId}/verify` | — | `{"valid":bool,"events":int,"head":str,"brokenAt"?:eventId,"reason"?}` |
-| `GET /prices?crop=<crop>&market=<market>` | market optional | `{"updatedAt":ms,"prices":[{"crop","market","pricePerKgPaise","source","ts"}]}` |
-| `POST /prices/refresh` | `{"crop"?,"market"?}` | same shape as `GET /prices` |
-| `GET /trades?crop=<crop>` | crop required | `{"crop","updatedAt":ms,"pricePerKgPaise":int\|null,"trades":[{"batchId","eventId","ts","tokens","pricePerKgPaise","fromActorId","toActorId"}]}` |
+| `GET /batches/{batchId}/verify` | — | `{"valid":bool,"eventCount":int,"chains":[{"actorId","stream","head","count","valid","brokenAt"?,"reason"?}],"permissions":{"valid":bool,"errors":[]},"balances":{...}}` |
+| `GET /batches/{batchId}/route?max=200` | `max` 1–1000 | `{"batchId","points":[{"ts","lat","lon","accuracyM","mock","actorId","chainSeq"}],"truncated":bool}` oldest first |
+| `GET /trades?crop=<crop>&grade=<A\|B\|C>` | crop required; grade optional | `{"crop","grade"?,"method":"median20","sampleSize":int,"pricePerKgPaise":int\|null,"byGrade":{...},"updatedAt":ms,"trades":[...]}` |
 | `GET /barter/offers?actorId=<id>&status=<s>` | both optional | `{"offers":[{"offerId","status","batchId","actorId","withActorId","giveKg","wantBatchId","wantKg","ts","acceptEventId"?,"cancelEventId"?}]}` newest first |
 | `GET /barter/offers/{offerId}` | — | one offer object as above |
+| `GET /ledger/root` | — | `{"height","eventCount","root","ts","nodeId","pubKey","sig"}` signed Merkle root (T23) |
 
-BatchSummary:
+BatchSummary v2:
 
 ```json
 {"batchId":"uuid","crop":"wheat","grade":"A","initialKg":100,
  "balances":{"farmer:uuid":100},"ownerId":"farmer:uuid",
- "tamperCount":0,"lastHash":"<hex>","verified":true,"events":[]}
+ "tamperCount":0,"eventCount":42,"heartbeatGaps":0,"mockCount":0,
+ "chains":[{"actorId":"farmer:uuid","stream":"main","head":"<hex>","chainSeq":3}],
+ "verified":true,"events":[]}
 ```
 
-`ownerId` = holder of the largest balance (ties: most recent transfer). A TRANSFER may not exceed the sender's balance; the ledger rejects it with `409 insufficient_balance`. Trade price is the token-weighted average of TRANSFER events that carry `pricePerKgPaise` for that crop (`null` with no trades). Barter is a two-party signed handshake posted through `POST /events`: an `offer` event on the giver's batch, then an `accept` event on the counterparty's batch (mirrored `giveKg`/`wantKg`, same `offerId`), or a `cancel` event by the offerer. An accepted pair swaps `giveKg` on the offer batch and `wantKg` on the want batch as a balance overlay (no TRANSFER events); balances, owner and later transfer checks include accepted swaps. `409` codes: `offer_not_open`, `offer_mismatch`, `not_counterparty`, `duplicate_offer`.
+`ownerId` = holder of the largest balance (ties: most recent transfer). A TRANSFER may not exceed the sender's balance; the ledger rejects it with `409 insufficient_balance`. Barter is a two-party signed handshake posted through `POST /events`: an `offer` event on the giver's batch, then an `accept` event on the counterparty's batch (mirrored `giveKg`/`wantKg`, same `offerId`), or a `cancel` event by the offerer. An accepted pair swaps `giveKg` on the offer batch and `wantKg` on the want batch as a balance overlay (no TRANSFER events); balances, owner and later transfer checks include accepted swaps. The overlay is included in `/verify`; it is not a substitute for escrow. `409` codes: `offer_not_open`, `offer_mismatch`, `not_counterparty`, `duplicate_offer`.
 
-### Mesh and QR
+`GET /trades` uses the **median of the last 20 priced TRANSFER events** for the crop (and grade, when given), excluding self-trades (`fromActorId == toActorId`), non-positive prices and malformed rows. `method:"median20"`; even counts use the lower-middle integer. The UI labels this **reported token price**, not mandi data. `byGrade` is always returned so the chart can show A/B/C separately. There is no `PRICE` event and no `market` batch in v2.
 
-One envelope, compact keys: `{"v":2,"k":"E","id":"<uuid>","s":"<senderId>","t":ms,"ttl":6,"ev":[...]}`. `k` is `E` (events) or `A` (ack, `"ack":[eventId,...]`). Event keys: `i` eventId, `b` batchId, `y` type, `a` actorId, `t` ts, `la` lat, `lo` lon, `d` data, `p` prevHash, `g` sig. `hash` is omitted; receivers recompute it. v1 envelopes still parse. Transports implement `Transport { id, available(), maxPayload, send(envelope), onReceive }`: Nearby (Bluetooth/WiFi Direct), SMS (GSM radio), Internet (HTTP to the ledger). SMS sends only `REGISTER`/`TRANSFER`/`TAMPER`/`DELIVER` (never GPS) as text SMS, base64 chunks ≤140 chars, `AC1|<msgId>|<idx>/<total>|<base64>`, to the gateway number in settings. Receivers reassemble before relaying.
+`GET /batches/{id}/route` merges all bound-box `trace` chains and returns the latest `max` points. `heartbeatGaps` counts gaps > 5 minutes between consecutive GPS fixes; `mockCount` counts GPS events with `data.mock=true`. Buyers must verify hashes/signatures/chains locally and treat the server's `verified` as a hint only.
 
-Relay rules: dedupe by `eventId` in the persisted `seen` set; any node with internet POSTs (ledger append is idempotent by `eventId`), broadcasts an ACK and marks acked events synced; without internet, queue in the SQLite outbox and forward on every available transport with `ttl-1`, dropping at 0. Retry when a transport or internet appears. No gateway election. QR payload: `agri://batch/<batchId>`.
+### Mesh and QR v3
+
+One envelope, compact keys: `{"v":3,"k":"E","id":"<8hex>","s":"<senderId>","t":ms,"ttl":6,"ev":[...]}`. `k` is `E` (events) or `A` (ack, `"ack":[eventId,...]`, `"sig":"<base64>"`). Event keys: `i` eventId, `b` batchId, `y` type, `a` actorId, `t` ts, `la` lat, `lo` lon, `d` data, `p` prevHash, `g` sig. `hash` is omitted; receivers recompute it. v2 envelopes still parse. Transports implement `Transport { id, available(), maxPayload, send(envelope), onReceive }`: Nearby (Bluetooth/WiFi Direct), SMS (GSM radio), Internet (HTTP to the ledger).
+
+SMS v3 is a compact **binary** envelope (magic `AC3`, version, kind, 8-hex msgId, ttl, event count, events, CRC32), base64url-chunked as `AC3|<msgId>|<idx>/<total>|<base64url>` with ≤140 payload characters per chunk. The short msgId and 140-char payload keep a chunk inside one 160-character SMS (M4). SMS sends only `REGISTER`/`BIND`/`TRANSFER`/`TAMPER`/`DELIVER`; GPS `trace` events never go over SMS. Receivers reassemble by msgId, verify the CRC, then decode. `BIND` must be delivered before the box's `TAMPER` on the same SMS path; per-chain heads make that possible without GPS predecessors (C3).
+
+Relay rules: persist `seenEvents` (eventId), `seenEnvelopes` (envelope id), `sentTo` (peer → eventIds) and `acked` (peer+eventId). Any node with internet POSTs (ledger append is idempotent by eventId), then broadcasts a **signed** ACK. A node clears an event only when an ACK from a peer it actually sent the event to verifies; an unsigned/spoofed ACK is ignored (H6). The gateway ACKs only after `201` or an idempotent success, never after a reject. Without internet, queue in the SQLite outbox and forward on every available transport with `ttl-1`, dropping at 0. Retry when a transport or internet appears. No gateway election. QR payload: `agri://batch/<batchId>`; the QR identifies the batch but is not a physical anti-counterfeit seal (H4, see Blockers).
+
+## Audit round 2: findings → fixes
+
+The external audit read only this README, so its *(verify in code)* items were checked against the actual tree. The table is the contract for the fixes; T15–T24 implement it.
+
+| Finding | Fix in v2 | Task |
+|---------|-----------|------|
+| C1 any registered actor can write any batch | `BIND` owner authorization + permission matrix + ledger enforcement | T15, T19, T20 |
+| C2 one linear chain loses offline data | per-`(batchId, actorId, stream)` chains, own genesis; box `trace` is separate from farmer `main` | T15, T19, T20 |
+| C3 SMS TAMPER needs missing GPS predecessor | per-chain heads; SMS carries `TAMPER` on the box `main` chain, GPS stays on `trace` | T15, T19, T21 |
+| C4 self-declared mint/price | REGISTER cap 100000 kg; owner-only BIND; `median20` reported token price; exclude self-trades; per grade | T15, T18, T19 |
+| H1 first-come identity, lost key | admin-token registration; document key loss/recovery as a demo limitation; no silent key rotation | T15, T19, T24 |
+| H2 one node can truncate | node key + signed Merkle root (`/ledger/root`) + `mirror.py` divergence check | T23 |
+| H3 buyer trusts `verified` | buyer verifies hashes/signatures/chains/BIND locally; server flag is a hint | T20 |
+| H4 QR copyable | one-time/signed QR is not in the demo; documented as a physical-provenance blocker | T24 |
+| H5 barter overlay breaks per-chain proof | overlay included in `/verify`; escrow/cross-chain atomicity documented as a limitation | T19, T24 |
+| H6 unauthenticated ACK | signed ACKs + `sentTo`/`acked` per peer; gateway ACKs only on success | T21 |
+| M1 canonical JSON drift | `contracts/vectors.json` ≥12 cases incl. Telugu, emoji, `/`, `<>`, quotes; Python/Kotlin parity | T17 |
+| M2 tamper noise, no tamper location | movement gating, route-based geofence, `traceHead` + last fix on TAMPER, `gps_off`/`mock_location`/`power`, heartbeat gaps | T22 |
+| M3 GPS volume | 20 m / 60 s adaptive logging, pagination, latest 200 in summary, `/route?max=` | T19, T22 |
+| M4 SMS sizing | short 8-hex msgId, 140-char base64url chunks, binary v3 + CRC | T21 |
+| M5 SMS limits/Play policy | documented as an operational blocker; default-handler/SMS-limit checks in the device checklist | T24 |
+| M6 device-clock timestamps | server `receivedAt`, future/past skew rejection | T19 |
+| M7 idempotency conflict | same `eventId` + different hash stays a hard `409`, with a regression test | T19 |
+| M8 PRICE breaks contract | remove `PRICE`, `market` batch, mandi API/cache/chart; replace with token price | T18 |
+| M9 cleartext/DoS | admin token, per-IP rate limit, cleartext debug-only network config, TLS/reverse-proxy runbook | T19, T24 |
+| M10 privacy | document DPDP/route sensitivity; add coarse-route option/runbook (demo keeps exact route) | T24 |
+| Background execution | API-level permissions, foreground location service + wake lock | T16 (charan) |
+| Unproven phone claims | two-phone script + final device pass below | T24 |
+| Hygiene | LICENSE/CI/repo metadata tracked separately; not required for the demo | T24 |
+
+## Device test checklist (needs an Android phone)
+
+Status: **pending — no phone is attached to Laasya's workstation.** `adb devices -l` returned an empty list at 2026-11-25 13:49. Do not mark any item below `done` without pasting the actual `adb`/`logcat` output in the Inbox.
+
+Common setup (PowerShell; the bundled platform-tools path is in `scripts/dev.sh`):
+
+```powershell
+adb devices -l
+adb reverse tcp:8000 tcp:8000
+adb logcat -c
+adb logcat -s AgriChain:V
+```
+
+| ID | Check | How | Pass condition |
+|----|-------|-----|----------------|
+| D1 | Runtime permissions per API level (T16) | fresh install on API 26/29/31/33/36; deny then grant location/SMS/Nearby | app asks at the right time; denied permissions show a recoverable message; no crash |
+| D2 | Foreground GPS with screen off (T16) | start box logging, lock screen, wait 10 min, `adb shell dumpsys location` | `AgriChain` logcat shows fixes; foreground notification stays; no OEM kill |
+| D3 | SMS receive + dual-SIM send (T16) | send `AC3\|...` from a second phone; pick SIM1/SIM2 in settings | receiver fires; `SmsManager` uses the selected subscription; gateway ACK arrives |
+| D4 | BIND + per-chain sync (T20) | farmer registers, box scans QR, farmer taps "Authorize box", box logs offline, farmer syncs | box GPS/TAMPER land on box chains; farmer main chain is untouched; no `prev_mismatch` |
+| D5 | Tamper evidence (T20/T22) | mock location on; power off charger; leave GPS off 5 min; shake box | TAMPER kinds `mock_location`/`power`/`gps_off`/`movement` with `traceHead` + last fix; buyer shows them |
+| D6 | SMS/Nearby two-phone pass (T21) | phone A radio-only, phone B online gateway; drop/reorder/duplicate chunks; spoof an ACK | events converge; duplicate count unchanged; spoofed ACK does not clear the outbox |
+| D7 | GPS cadence + gaps (T22) | drive/walk 20 m, wait 60 s, then disable GPS 5 min | fixes at 20 m or 60 s; buyer shows `heartbeatGaps`/`mockCount`/`eventCount` |
+| D8 | Signed root + mirror (T23) | run ledger, `curl /ledger/root`, run `mirror.py` against a second node | signatures verify; mirror exits 0 on match, non-zero with the divergent height on tamper |
+| D9 | Final demo (T24) | two phones, full flow, screen-off segment, buyer scan | README demo script passes; every unverified item is listed in Blockers |
 
 ## Inbox
 
@@ -150,7 +235,9 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-25 13:10] FROM charan → all: T16 done on task-T16-charan. Every screen (prices, sync, buyer, box, mesh, main) now reads and writes `LedgerSettings`, so the USB host reaches prices. On launch and on "Auto-detect ledger" the app probes saved → `127.0.0.1` (adb reverse) → `10.0.2.2` (emulator) → UDP 8100 broadcast, saves the first healthy `/health`, and prices retries once after a failed fetch. `ledger/discovery.py` answers the broadcast with the LAN URL; disable with `AGRICHAIN_DISCOVERY=0`. Upload gating accepts loopback/Wi-Fi so USB needs no validated internet. Tests: 32 ledger (3 new), 57 Android (6 new). | open
 - [2026-11-25 13:05] FROM charan → all: T16 verified on a real USB phone. With an unreachable saved host and `adb reverse tcp:8000 tcp:8000`, the app saved `http://127.0.0.1:8000`; with the reverse removed it saved `http://192.168.31.71:8000` via the UDP broadcast. `curl` from the phone to `/prices?crop=wheat` returned 200 over the cable. UI tap-through remains manual because the test phone was locked. | done
 - [2026-11-25 13:52] FROM Laasya → all: claiming T15 (contract v2 docs) on task-T15-laasya. I will write the per-(batchId, actorId, stream) chain rules, BIND authorization, permission matrix, admin token, retry codes, pagination and `/route`. No code in this task; T19/T20 implement it. Device-only checks are listed in the new Device test checklist. | open
+- [2026-11-25 14:05] FROM Laasya → all: T15 done on task-T15-laasya. Contract v2 is in README: per-(batchId, actorId, stream) chains (`trace` GPS, `main` otherwise, own genesis), BIND + permission matrix, admin token, retry codes, pagination, `/route`, median20 trades, signed roots, SMS v3, audit-finding mapping and the D1–D9 device checklist. No code yet; T19/T20 implement it. Device checks stay pending (no phone attached). | done
 - [2026-11-25 13:20] FROM charan → all: audit round 2 board added as T15-T24 (old T15/T16 stay complete in history). I am claiming T16 device readiness: permissions per API level, box foreground service, default-SIM SMS, and `scripts/dev.sh`. I will touch only the T16 paths; T15 docs, T17 vectors and T18 token prices are free. | open
+- [2026-11-25 13:45] FROM charan → all: T16 done on task-T16-device-readiness-charan. One permission flow in `APP/core/Permissions.kt` names every denied runtime permission (API 31 Bluetooth, API 33 Nearby Wi-Fi + notifications, SMS, location, camera); the box runs GPS/tamper in a location foreground service with a partial wake lock; SMS sends on the default SMS subscription and logs sent/delivered; every log tag is `AgriChain`; `scripts/dev.sh` holds the adb cheat sheet. Device evidence: `permissions: all 10 granted`; after revoking one, `permissions: denied 1/10: android.permission.NEARBY_WIFI_DEVICES`; box `isForeground=true`, `mWakefulness=Asleep` at start and end, 90 signed GPS events over 2 min; `mesh: nearby: advertising as phone-1a373543`; no AndroidRuntime crash. Actual SMS sent/delivered and 2-phone radio tests remain manual. | done
 
 ## Decisions log
 
@@ -174,22 +261,40 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-24 charan: SMS uses `AC1|<msgId>|<idx>/<total>|<base64>` with a 140-char payload (≤160-char SMS), 2 s between sends, and a persisted outbox so a dropped chunk is retried on the next broadcast. ACKs go to the inbound `originatingAddress`, not the configured gateway, and are not added to the seen-set (an ACK can arrive before its event).
 - 2026-11-25 charan: T15 serves the dashboard from FastAPI itself (`/`, `/static`), so there is no second server or CDN and the demo works offline. `/stats` and `/events/recent` are read-only additions. USB testing uses `adb reverse tcp:8000 tcp:8000` plus the app's "Use USB" button (`http://127.0.0.1:8000`); Wi-Fi phones keep using the laptop LAN IP.
 - 2026-11-25 charan: T16 makes `LedgerSettings` the only ledger host on Android; `PriceCache` no longer stores a URL. Discovery order is saved → USB loopback → emulator host → UDP broadcast to port 8100 with the token `AGRICHAIN_DISCOVER`; the ledger replies `{"service":"agrichain","baseUrl":"http://<lan-ip>:<port>"}` and the app saves the first URL whose `/health` returns 200. Loopback and Wi-Fi/Ethernet/cellular/VPN count as usable transports for HTTP uploads, because `adb reverse` has no validated internet.
+- 2026-11-25 Laasya: audit v2 keeps the signed event fields unchanged and derives the chain key as `(batchId, actorId, stream)` (`trace` for GPS, `main` otherwise). `chainSeq`/`receivedAt` are server metadata, not signed. This fixes C2 without re-signing offline events and keeps the v1 canonical test vector valid.
+- 2026-11-25 Laasya: `BIND` is a `main`-chain event signed by the current batch owner; the latest BIND wins and `boxId:null` unbinds. GPS/TAMPER require a bound box, REGISTER is farmer-only, TRANSFER/BARTER are holder-only, DELIVER is bound box or holder. This is the C1/C3 permission matrix.
+- 2026-11-25 Laasya: `POST /actors` and `/admin/*` require `X-Admin-Token`; `AGRICHAIN_DEV=1` supplies `dev-admin-token` for local demos. `/events` stays signature-authorized. `/actors` and `/events` get a per-IP rate limit. This is the H1/M9 mitigation; key recovery remains a demo limitation.
+- 2026-11-25 Laasya: v2 canonical JSON is UTF-8 with ASCII keys and raw non-ASCII values; integers are signed 64-bit and floats are rejected. `contracts/vectors.json` is the single source for Python/Kotlin parity, including Telugu, emoji, `/`, `<>` and quotes (M1/T17).
+- 2026-11-25 Laasya: `PRICE` and the `market` batch are removed. `GET /trades` returns the median of the last 20 priced TRANSFERs (`method:"median20"`), excludes self-trades and non-positive prices, and reports `byGrade`. The UI calls it a reported token price, not mandi data (C4/M8/T18).
+- 2026-11-25 Laasya: TAMPER carries `traceHead` plus `lastLat`/`lastLon`; kinds add `gps_off`/`mock_location`/`power`. GPS logs on 20 m movement or 60 s heartbeat, whichever comes first. Buyer summaries expose `heartbeatGaps`/`mockCount`/`eventCount` (M2/M3/T22).
+- 2026-11-25 Laasya: SMS v3 is a CRC-checked binary envelope with an 8-hex msgId and ≤140-char base64url chunks. ACKs are signed and only clear events actually sent to that peer; `seenEvents`/`seenEnvelopes`/`sentTo`/`acked` are persisted. Gateway ACKs only after 201/idempotent success (H6/M4/T21).
+- 2026-11-25 Laasya: `/ledger/root` signs a Merkle root over all event hashes with a node P-256 key; `ledger/mirror.py` compares roots from two nodes and exits non-zero on divergence. Clients pin the last root. This is the H2 mitigation (T23).
+- 2026-11-25 Laasya: phone-dependent checks are listed in “Device test checklist”. No phone is attached to this workstation, so D1–D9 stay `pending`; code/tests that run on the JVM/Python are still verified locally.
 - 2026-11-25 charan: audit round 2 reuses T15-T24. The pre-audit T15/T16 (laptop runner, auto-detect) remain complete in git history; new work uses suffixed branches such as `task-T16-device-readiness-charan`.
+- 2026-11-25 charan: T16 keeps one runtime permission list in `APP/core/Permissions.kt`; MainActivity requests it and names every denial. The box runs `GpsRecorder` and `TamperDetector` in `BoxService` (foreground type location + partial wake lock) through the shared `BoxEngine`, so closing the activity or turning the screen off does not stop logging. SMS uses the default SMS subscription and `SmsStatusReceiver` logs the carrier sent/delivered result. Every log tag is `AgriChain`. `scripts/dev.sh` is the adb cheat sheet; `--es openBox <uuid> --ez autoStart true` and `--ez openMesh true --ez autoStart true` on MainActivity are dev-only launch hooks.
 
 ## Blockers
 
-- None. Teammates need JDK 17 and the Android SDK (build-tools 35+, platform 36) to build the app.
+- **No Android phone on Laasya's workstation.** `adb devices -l` is empty (2026-11-25 13:49). D1–D9 in the Device test checklist are pending; do not claim them as verified. Charan has the USB test phone for T16.
+- **T16 is charan's.** T20/T22 need his foreground location service, API-level permission flow and `scripts/dev.sh`. Coordinate before touching `APP/box/`, `AndroidManifest.xml` or `android/app/build.gradle.kts`.
+- **T17 instrumented test needs a phone + `adb reverse tcp:8000 tcp:8000`.** The JVM/Python parity suite runs without one; the AndroidKeyStore test is written but cannot be marked passed until D2/D4 are run.
+- **Physical provenance (H4) and production TLS (M9) are not demo features.** The QR is copyable; the demo runs cleartext on a trusted LAN/USB. The runbook requires a TLS reverse proxy and a signed one-time QR for production.
+- **Barter is still an overlay, not escrow (H5).** `/verify` includes it, but cross-chain atomicity/escrow is documented as a limitation, not implemented in the demo.
+- **Key recovery (H1) is not implemented.** A lost AndroidKeyStore key means a lost actor identity/balance; the demo re-registers a new actor. Production needs recovery/revocation.
+- **SMS volume/policy (M5).** India P2P daily limits and Play SMS-permission policy must be checked before a field pilot; the demo uses a configured gateway phone.
+- Teammates need JDK 17 and the Android SDK (build-tools 35+, platform 36) to build the app.
 
 ## Demo script and run instructions
 
-Final script is T13. Every task must serve this flow:
+Final script is T24. Every task must serve this flow:
 
-1. Start ledger; register farmer, buyer and box actors while online.
-2. Farmer registers a batch → QR shown; box scans/binds to the batch.
-3. Box goes offline; GPS points and a tamper event are signed and queued.
-4. Box comes near an online farmer phone; mesh relays events; phone posts them to the ledger.
-5. Buyer scans the QR → sees route, tamper flags, balances and verified history.
-6. Farmer makes a barter offer; second farmer accepts; prices panel shows mandi rates.
+1. Start the v2 ledger with `AGRICHAIN_DEV=1` (admin token `dev-admin-token`); register farmer, buyer and box actors while online.
+2. Farmer registers a batch (max 100000 kg) → QR shown; box scans the QR.
+3. Farmer taps **Authorize box** → signed `BIND` on the farmer's `main` chain. The box now has its own `trace`/`main` chains.
+4. Box goes offline; GPS points (20 m / 60 s) and tamper events are signed and queued. TAMPER carries `traceHead` + last fix; mock/power/gps-off are flagged.
+5. Box reaches an online phone; per-chain sync posts events. `unbound_box`/`batch_unknown`/`prev_mismatch` retry; the farmer's chain is never blocked by the box's chain.
+6. Buyer scans the QR → verifies hashes/signatures/chains/BIND locally, sees route, tamper list, `heartbeatGaps`/`mockCount` and the reported token price (`median20`).
+7. Farmer makes a barter offer; second farmer accepts; the token-price chart shows the median of the last 20 priced transfers, never mandi data.
 
 Run (updated as tasks land):
 
@@ -207,6 +312,7 @@ Run (updated as tasks land):
 # The app probes saved → 127.0.0.1 (USB) → 10.0.2.2 (emulator) → LAN and keeps the
 # first healthy /health. Prices, sync, buyer and box all share that saved host.
 # adb reverse maps phone 127.0.0.1:8000 to this laptop; Wi-Fi is not needed.
+# adb cheat sheet (install / reverse / logs / grant / ui): ./scripts/dev.sh help
 
 # Ledger tests
 pip install -r ledger/requirements-dev.txt
@@ -220,8 +326,9 @@ cd android && ./gradlew installDebug
 # Launcher → "This is the transport box".
 # 1. Set the ledger URL, tap "Register box online" (POST /actors).
 # 2. Scan the farmer's batch QR, then "Bind" (GET /batches/{id} → lastHash).
-# 3. "Start logging"; each GPS fix is signed and hash-chained locally.
-#    No network is needed after binding; screen stays on while the box screen is open.
+# 3. "Start logging"; each GPS fix is signed and hash-chained locally. Logging runs in a
+#    location foreground service with a partial wake lock, so the screen can go off.
+#    "Stop logging" ends the service.
 
 # Tamper detection (T7)
 # After binding, tap "Arm tamper detection".
@@ -230,11 +337,10 @@ cd android && ./gradlew installDebug
 #    so each fix is checked against it.
 #  - "Simulate tamper (demo)" emits a TAMPER event without touching the sensors.
 
-# Mandi prices (T9, T16)
-# Launcher → "Mandi prices"; tap "Auto-detect ledger" (or keep the saved host) and pick a
-# crop/market. A failed fetch retries once through discovery, so USB works without an IP.
-# The ledger seeds 11 crop/market rates and caches snapshots in SQLite; the app keeps
-# the last successful response in SharedPreferences, so the chart still works offline.
+# Token price (T18)
+# Launcher → "Token price"; pick crop and grade. GET /trades returns the median of the last
+# 20 priced TRANSFERs (self-trades excluded), method "median20". This is reported token
+# data, not mandi data; the last successful response is cached for offline viewing.
 
 # Buyer history (T8)
 # Buyer → set the ledger host (LAN IP on a phone), scan the farmer QR or paste a batch id.
@@ -270,4 +376,23 @@ python3 demo/seed.py --base-url http://127.0.0.1:8000
 
 # Unit tests (canonical event hash, QR codec, box events, buyer history, barter, sync, mesh, SMS)
 cd android && ./gradlew testDebugUnitTest
+
+# v2 ledger with admin-token registration (T19)
+AGRICHAIN_DEV=1 AGRICHAIN_ADMIN_TOKEN=dev-admin-token ./tools/ledger.sh
+# The app's Ledger sync screen stores the same admin token for "Register actors".
+
+# Canonical JSON parity vectors (T17): Python and Kotlin read contracts/vectors.json
+cd ledger && python3 -m pytest -q tests/test_vectors.py
+cd ../android && ./gradlew testDebugUnitTest --tests 'com.agrichain.core.CanonicalVectorsTest'
+
+# Instrumented AndroidKeyStore signing test (needs a phone + adb reverse)
+adb reverse tcp:8000 tcp:8000
+cd android && ./gradlew connectedDebugAndroidTest
+
+# Signed root + mirror (T23)
+curl -s http://127.0.0.1:8000/ledger/root
+python3 ledger/mirror.py --primary http://127.0.0.1:8000 --secondary http://127.0.0.1:8001
+
+# Device-only checks are D1–D9 in “Device test checklist”. They stay pending until a phone
+# is attached; never mark them done without quoting adb/logcat output.
 ```

@@ -22,7 +22,7 @@ object LedgerDiscovery {
     const val DISCOVERY_PORT = 8100
     private const val PROBE_PATH = "/health"
     private const val TOKEN = "AGRICHAIN_DISCOVER"
-    private const val TAG = "AgriChainDiscovery"
+    private const val TAG = "AgriChain"
 
     private val running = AtomicBoolean(false)
     private val waiters = mutableListOf<(String?) -> Unit>()

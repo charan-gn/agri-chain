@@ -34,13 +34,13 @@ class SmsReceiver : BroadcastReceiver() {
                     val result = MeshRuntime.get(appContext)
                         .onEnvelope(envelope, "sms", address.takeIf { it.isNotEmpty() })
                     Log.i(
-                        "AgriChainSms",
-                        "from ${address.takeLast(4)}: ${result.freshEvents} new, " +
+                        "AgriChain",
+                        "sms: from ${address.takeLast(4)} ${result.freshEvents} new, " +
                             "${result.uploaded} uploaded",
                     )
                 }
             } catch (error: Exception) {
-                Log.w("AgriChainSms", "receive failed: ${error.message}")
+                Log.w("AgriChain", "sms: receive failed: ${error.message}")
             } finally {
                 pending.finish()
             }
