@@ -30,13 +30,25 @@ class SmsReceiver : BroadcastReceiver() {
                 val groups = messages.groupBy { it.originatingAddress.orEmpty() }
                 for ((address, parts) in groups) {
                     val body = parts.joinToString("") { it.messageBody.orEmpty() }
-                    val envelope = SmsInbox.reassembler.accept(body, now) ?: continue
-                    val result = MeshRuntime.get(appContext)
-                        .onEnvelope(envelope, "sms", address.takeIf { it.isNotEmpty() })
+                    val part = SmsCodec.parsePart(body) ?: continue
+                    val envelope = SmsInbox.reassembler.accept(body, now)
+                    if (envelope == null) {
+                        Log.i(
+                            "AgriChain",
+                            "sms: part ${part.index}/${part.total} (${part.msgId}) from ...${address.takeLast(4)}",
+                        )
+                        continue
+                    }
+                    val reply = if (envelope.kind == MeshKind.EVENTS) {
+                        address.takeIf { it.isNotEmpty() }
+                    } else {
+                        null
+                    }
+                    val result = MeshRuntime.get(appContext).onEnvelope(envelope, "sms", reply)
                     Log.i(
                         "AgriChain",
-                        "sms: from ${address.takeLast(4)} ${result.freshEvents} new, " +
-                            "${result.uploaded} uploaded",
+                        "sms: ${envelope.kind} from ...${address.takeLast(4)} " +
+                            "${result.freshEvents} new, ${result.uploaded} uploaded",
                     )
                 }
             } catch (error: Exception) {

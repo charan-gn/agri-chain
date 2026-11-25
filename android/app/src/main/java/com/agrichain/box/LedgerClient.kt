@@ -38,11 +38,13 @@ object LedgerClient {
         name: String,
         role: String,
         pubKey: String,
+        adminToken: String = "dev-admin-token",
     ) {
         val connection = open("${normalizeBaseUrl(baseUrl)}/actors").apply {
             requestMethod = "POST"
             doOutput = true
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("X-Admin-Token", adminToken)
         }
         val payload = JSONObject()
             .put("actorId", actorId)

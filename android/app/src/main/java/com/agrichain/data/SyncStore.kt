@@ -9,17 +9,18 @@ import com.agrichain.mesh.RelayStore
 import org.json.JSONObject
 
 /**
- * Durable outbox for events waiting to reach the ledger, plus the persisted
- * seen-set used by the mesh relay. BatchStore remains the per-screen event log;
- * this queue survives restarts and tracks upload state.
+ * Durable outbox for events waiting to reach the ledger, plus persisted
+ * seen-event and seen-envelope sets used by the mesh relay.
  */
 class SyncStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION), RelayStore {
 
     companion object {
         private const val DB_NAME = "agrichain_sync.db"
-        private const val DB_VERSION = 2
+        private const val DB_VERSION = 3
         private const val TABLE = "outbox"
         private const val SEEN = "seen"
+        private const val SEEN_ENVELOPES = "seen_envelopes"
+        private const val ENVELOPE_TTL_MS = 24 * 60 * 60 * 1000L
 
         private const val CREATE_OUTBOX = """
             CREATE TABLE outbox (
@@ -37,15 +38,24 @@ class SyncStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_
                 seen_at INTEGER NOT NULL
             )
         """
+
+        private const val CREATE_SEEN_ENVELOPES = """
+            CREATE TABLE seen_envelopes (
+                envelope_id TEXT PRIMARY KEY,
+                seen_at INTEGER NOT NULL
+            )
+        """
     }
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(CREATE_OUTBOX)
         db.execSQL(CREATE_SEEN)
+        db.execSQL(CREATE_SEEN_ENVELOPES)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL(CREATE_SEEN)
+        if (oldVersion < 3) db.execSQL(CREATE_SEEN_ENVELOPES)
     }
 
     override fun enqueue(event: Event): Boolean {
@@ -120,6 +130,30 @@ class SyncStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_
         } finally {
             db.endTransaction()
         }
+    }
+
+    override fun hasSeenEnvelope(envelopeId: String): Boolean =
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM $SEEN_ENVELOPES WHERE envelope_id = ? LIMIT 1",
+            arrayOf(envelopeId),
+        ).use { it.moveToFirst() }
+
+    override fun markSeenEnvelope(envelopeId: String) {
+        val now = System.currentTimeMillis()
+        writableDatabase.delete(
+            SEEN_ENVELOPES,
+            "seen_at < ?",
+            arrayOf((now - ENVELOPE_TTL_MS).toString()),
+        )
+        writableDatabase.insertWithOnConflict(
+            SEEN_ENVELOPES,
+            null,
+            ContentValues().apply {
+                put("envelope_id", envelopeId)
+                put("seen_at", now)
+            },
+            SQLiteDatabase.CONFLICT_IGNORE,
+        )
     }
 
     override fun pendingCount(): Int =

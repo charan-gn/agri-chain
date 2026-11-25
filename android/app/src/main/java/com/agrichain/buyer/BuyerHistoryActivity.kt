@@ -113,7 +113,6 @@ class BuyerHistoryActivity : AppCompatActivity() {
         binding.refreshButton.isEnabled = true
         binding.ledgerUrl.text = "Server: ${LedgerSettings.baseUrl(this)}"
 
-<<<<<<< HEAD
         when {
             history.tamperCount > 0 || history.mockCount > 0 -> {
                 val parts = buildList {
@@ -121,53 +120,36 @@ class BuyerHistoryActivity : AppCompatActivity() {
                     if (history.mockCount > 0) add("${history.mockCount} mock GPS")
                     if (history.heartbeatGaps > 0) add("${history.heartbeatGaps} GPS gap(s)")
                 }
+                binding.safetyIcon.setImageResource(R.drawable.ill_shield_alert)
                 binding.status.text = "Warning: ${parts.joinToString(", ")}"
                 binding.status.setTextColor(getColor(R.color.status_alert))
+                binding.safetySub.text = "The box flagged possible tampering or fake GPS. Check below."
             }
             history.verified && history.heartbeatGaps > 0 -> {
-                binding.status.text = "Verified with ${history.heartbeatGaps} GPS gap(s) (>5 min)"
+                binding.safetyIcon.setImageResource(R.drawable.ill_shield_ok)
+                binding.status.text = "Verified with ${history.heartbeatGaps} GPS gap(s)"
                 binding.status.setTextColor(getColor(R.color.status_warn))
+                binding.safetySub.text = "Records match, but GPS signal dropped for >5 min."
             }
             history.verified -> {
-                binding.status.text = "Verified chain"
+                binding.safetyIcon.setImageResource(R.drawable.ill_shield_ok)
+                binding.status.text = "Safe & Verified ✓"
                 binding.status.setTextColor(getColor(R.color.status_ok))
+                binding.safetySub.text = "No tampering found. All records match."
             }
             else -> {
-                binding.status.text = "Chain not verified"
+                binding.safetyIcon.setImageResource(R.drawable.ill_shield_alert)
+                binding.status.text = "Could Not Verify"
                 binding.status.setTextColor(getColor(R.color.status_alert))
+                binding.safetySub.text = "Record signature chain has a mismatch."
             }
-=======
-        if (history.verified && history.tamperCount == 0) {
-            binding.safetyIcon.setImageResource(R.drawable.ill_shield_ok)
-            binding.status.text = "Safe & Verified ✓"
-            binding.status.setTextColor(getColor(R.color.status_ok))
-            binding.safetySub.text = "No tampering found. All records match."
-        } else if (history.tamperCount > 0) {
-            binding.safetyIcon.setImageResource(R.drawable.ill_shield_alert)
-            binding.status.text = "Tamper Warning (${history.tamperCount})"
-            binding.status.setTextColor(getColor(R.color.status_alert))
-            binding.safetySub.text = "The box flagged possible tampering. Check below."
-        } else {
-            binding.safetyIcon.setImageResource(R.drawable.ill_shield_alert)
-            binding.status.text = "Could Not Verify"
-            binding.status.setTextColor(getColor(R.color.status_alert))
-            binding.safetySub.text = "Record signature chain has a mismatch."
->>>>>>> task-T21-laasya
         }
 
         binding.cropImage.setImageResource(UiHelpers.cropIcon(history.crop))
         binding.details.text =
-<<<<<<< HEAD
-            "${history.crop} · grade ${history.grade} · ${history.initialKg} kg initial · " +
+            "${UiHelpers.cropTitle(history.crop)} · Grade ${history.grade} · ${history.initialKg} kg · " +
                 "${history.eventCount} events · ${history.heartbeatGaps} gaps · ${history.mockCount} mock"
-        binding.owner.text = "Owner: ${BatchHistory.shortActor(history.ownerId)}"
-        binding.balances.text = "Balances\n" + history.balances.joinToString("\n") { (actor, kg) ->
-            "${BatchHistory.shortActor(actor)}: $kg kg"
-        }
-=======
-            "${UiHelpers.cropTitle(history.crop)} · Grade ${history.grade} · ${history.initialKg} kg"
         binding.owner.text = "Current owner: ${UiHelpers.friendlyActor(history.ownerId)}"
->>>>>>> task-T21-laasya
         binding.tradePrice.text = if (tradePricePaise == null) {
             "Typical price: no recent sales yet"
         } else {

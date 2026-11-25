@@ -32,19 +32,22 @@ class LedgerSync(private val context: Context, private val api: LedgerApi) {
 
         val pending = store.pending()
         val batches = pending.groupBy { it.batchId }.entries.sortedBy { (_, events) ->
-            // Upload REGISTER batches first so box/transfer events find their chain.
-            if (events.any { it.type == "REGISTER" }) 0 else 1
+            when {
+                events.any { it.type == "REGISTER" } -> 0
+                events.any { it.type == "BIND" } -> 1
+                else -> 2
+            }
         }
 
         for ((batchId, events) in batches) {
             var server = api.fetchBatch(batchId)
             var ids = server?.eventIds ?: emptySet()
-            var head = server?.head ?: ""
+            var chainHeads = server?.chainHeads?.toMutableMap() ?: mutableMapOf()
             var attempts = 0
             var done = false
 
             while (!done && attempts < 4) {
-                val plan = SyncPlanner.order(events, ids, head)
+                val plan = SyncPlanner.orderV2(events, ids, chainHeads)
                 if (plan.isEmpty()) {
                     done = true
                     break
@@ -52,20 +55,24 @@ class LedgerSync(private val context: Context, private val api: LedgerApi) {
                 attempts++
                 var retry = false
                 for (event in plan) {
+                    val chainKey = event.actorId to SyncPlanner.streamFor(event.type)
                     try {
-                        head = api.postEvent(event)
+                        val newHead = api.postEvent(event)
+                        chainHeads[chainKey] = newHead
                         ids = ids + event.eventId
                         store.markSynced(listOf(event.eventId))
                         uploaded++
                     } catch (error: LedgerException) {
                         if (error.status == 409 && error.code == "prev_mismatch") {
                             retry = true
+                            break
                         } else {
                             failed++
                             log("${event.type} ${event.eventId.take(8)} rejected: ${error.code}")
+                            if (error.status in setOf(400, 403, 422)) continue
                             done = true
+                            break
                         }
-                        break
                     } catch (error: IOException) {
                         failed++
                         log("network: ${error.message}")
@@ -77,17 +84,11 @@ class LedgerSync(private val context: Context, private val api: LedgerApi) {
                 if (retry) {
                     val refreshed = api.fetchBatch(batchId)
                     ids = refreshed?.eventIds ?: ids
-                    head = refreshed?.head ?: head
+                    chainHeads = refreshed?.chainHeads?.toMutableMap() ?: chainHeads
                     log("${batchId.take(8)}: head moved, retrying")
                 } else {
                     done = true
                 }
-            }
-
-            if (!done) {
-                val leftover = SyncPlanner.order(events, ids, head).size
-                failed += leftover
-                log("${batchId.take(8)}: $leftover event(s) could not be chained")
             }
         }
 

@@ -8,8 +8,8 @@ import org.junit.Test
 import kotlin.random.Random
 
 /**
- * JVM proof of the relay: virtual nodes, fake radio/SMS links with loss and
- * reordering, and an idempotent fake ledger. No Android classes are involved.
+ * JVM proof of the relay: virtual nodes, fake radio/SMS/LoRa links with loss and
+ * reordering, and an idempotent fake ledger.
  */
 class RelaySimulatorTest {
 
@@ -54,6 +54,7 @@ class RelaySimulatorTest {
         val outbox = LinkedHashMap<String, Event>()
         val seen = mutableSetOf<String>()
         val synced = mutableSetOf<String>()
+        val seenEnvelopes = mutableSetOf<String>()
 
         override fun hasSeen(eventId: String) = eventId in seen
         override fun markSeen(eventIds: Collection<String>) {
@@ -71,6 +72,11 @@ class RelaySimulatorTest {
         }
 
         override fun pendingCount(): Int = pending().size
+
+        override fun hasSeenEnvelope(envelopeId: String) = envelopeId in seenEnvelopes
+        override fun markSeenEnvelope(envelopeId: String) {
+            seenEnvelopes += envelopeId
+        }
     }
 
     private class FakeLedger : LedgerGateway {
@@ -184,7 +190,9 @@ class RelaySimulatorTest {
                 for (sms in ordered) {
                     val envelope = inboxes.getValue(sms.to).accept(sms.chunk, steps.toLong())
                         ?: continue
-                    smsTransports[sms.to]?.replyTo = numbers[sms.from]
+                    if (envelope.kind == MeshKind.EVENTS) {
+                        smsTransports[sms.to]?.replyTo = numbers[sms.from]
+                    }
                     engines.getValue(sms.to).receive(envelope)
                 }
             }
@@ -280,6 +288,28 @@ class RelaySimulatorTest {
     }
 
     @Test
+    fun `sms policy keeps bind and barter events`() {
+        val bind = Event.create(
+            batchId = batchId,
+            type = "BIND",
+            data = mapOf("boxId" to "box:11111111-1111-4111-8111-111111111111"),
+            signer = SignerA,
+            ts = 1_500,
+            prevHash = "",
+        )
+        val barter = Event.create(
+            batchId = batchId,
+            type = "BARTER",
+            data = mapOf("offerId" to "offer-1", "action" to "offer"),
+            signer = SignerA,
+            ts = 1_600,
+            prevHash = bind.hash,
+        )
+        val filtered = SmsPolicy.filter(MeshEnvelope.events("A", listOf(bind, barter)))
+        assertEquals(listOf("BIND", "BARTER"), filtered.events.map { it.type })
+    }
+
+    @Test
     fun `sms chunks survive loss and reordering`() {
         val network = SimNetwork()
         network.shuffleSms = true
@@ -340,11 +370,37 @@ class RelaySimulatorTest {
     }
 
     @Test
-    fun `duplicate envelopes do not double append`() {
+    fun `lora transport bridges offline node into nearby gateway`() {
+        val loraA = MeshtasticTransport(context = null, stubMode = true).apply { stubAvailable = true }
+        val loraB = MeshtasticTransport(context = null, stubMode = true).apply { stubAvailable = true }
+        val ledger = FakeLedger()
+
+        val storeA = SimStore()
+        val engineA = RelayEngine("A", storeA, null, mutableListOf(loraA))
+        loraA.start({ env, _ -> engineA.receive(env) }, {})
+
+        val storeB = SimStore()
+        val engineB = RelayEngine("B", storeB, ledger, mutableListOf(loraB))
+        loraB.start({ env, _ -> engineB.receive(env) }, {})
+
+        events().forEach { storeA.enqueue(it) }
+        engineA.broadcastPending()
+        assertTrue(loraA.sentChunks.isNotEmpty())
+
+        loraA.sentChunks.forEach { loraB.simulateReceive(it) }
+        assertEquals(3, ledger.events.size)
+        assertEquals(0, storeB.pendingCount())
+
+        loraB.sentChunks.forEach { loraA.simulateReceive(it) }
+        assertEquals(0, storeA.pendingCount())
+    }
+
+    @Test
+    fun `duplicate envelopes do not double append or storm acks`() {
         val network = SimNetwork()
         val ledger = FakeLedger()
         val (engineA, storeA) = radioNode(network, "A")
-        radioNode(network, "B")
+        val (engineB, _) = radioNode(network, "B")
         radioNode(network, "C", ledger)
         network.connectRadio("A", "B")
         network.connectRadio("B", "C")
@@ -357,6 +413,12 @@ class RelaySimulatorTest {
 
         assertEquals(3, ledger.events.size)
         assertEquals(0, storeA.pendingCount())
+
+        val ack = MeshEnvelope.ack("C", listOf("ev-1"))
+        val firstAck = engineB.receive(ack)
+        val secondAck = engineB.receive(ack)
+        assertTrue(firstAck.forwarded)
+        assertTrue(!secondAck.forwarded)
     }
 
     @Test

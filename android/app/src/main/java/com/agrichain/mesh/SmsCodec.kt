@@ -51,10 +51,6 @@ object SmsCodec {
     fun isPart(text: String): Boolean = text.trim().startsWith("$PREFIX|")
 }
 
-/**
- * Reassembles chunks by msgId. Duplicate chunks are ignored, missing chunks keep
- * the assembly pending until [expire], and a bad total resets that msgId.
- */
 class SmsReassembler(
     private val timeoutMs: Long = 10 * 60_000L,
     private val maxPending: Int = 32,
@@ -110,7 +106,7 @@ class SmsReassembler(
 }
 
 object SmsPolicy {
-    val IMPORTANT_TYPES = setOf("REGISTER", "TRANSFER", "TAMPER", "DELIVER")
+    val IMPORTANT_TYPES = setOf("REGISTER", "BIND", "TRANSFER", "TAMPER", "DELIVER", "BARTER")
 
     fun important(events: List<Event>): List<Event> = events.filter { it.type in IMPORTANT_TYPES }
 

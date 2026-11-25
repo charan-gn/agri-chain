@@ -3,7 +3,7 @@ package com.agrichain.mesh
 import com.agrichain.core.Event
 
 /**
- * One envelope format, many links. Nearby, SMS and the internet all implement this.
+ * One envelope format, many links. Nearby, SMS, Meshtastic LoRa and HTTP all implement this.
  */
 interface Transport {
     val id: String
@@ -28,6 +28,9 @@ interface RelayStore {
     fun pending(): List<Event>
     fun markSynced(eventIds: Collection<String>)
     fun pendingCount(): Int
+
+    fun hasSeenEnvelope(envelopeId: String): Boolean = false
+    fun markSeenEnvelope(envelopeId: String) {}
 }
 
 data class ReceiveResult(

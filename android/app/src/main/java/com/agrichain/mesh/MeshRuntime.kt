@@ -9,8 +9,7 @@ import com.agrichain.data.SyncStore
 import java.util.UUID
 
 /**
- * Process-wide relay. The SMS receiver and the Mesh screen share this instance so
- * a chunked envelope can arrive while the activity is closed.
+ * Process-wide relay. Nearby, SMS, Meshtastic LoRa and HTTP all converge here.
  */
 class MeshRuntime private constructor(context: Context) {
 
@@ -19,18 +18,15 @@ class MeshRuntime private constructor(context: Context) {
     private val store = SyncStore(app)
     private val sms = SmsTransport(app)
     private val ledger = HttpLedgerGateway(app)
+    private val pasteSmsReassembler = SmsReassembler()
+    private val pasteLoRaReassembler = MeshtasticReassembler()
 
     val selfId: String = prefs.getString("senderId", null)
         ?: "phone-${UUID.randomUUID().toString().take(8)}".also {
             prefs.edit().putString("senderId", it).apply()
         }
 
-    /**
-     * Meshtastic LoRa transport. Binds to the Meshtastic companion app via AIDL.
-     * [available] returns false when the companion app is not installed, so the
-     * relay simply skips this leg without any error.
-     * India band: nodes must use 865–867 MHz (IN region in Meshtastic app).
-     */
+    /** Meshtastic LoRa transport (865-867 MHz IN region). */
     val meshtastic = MeshtasticTransport(app)
 
     private val engine = RelayEngine(selfId, store, ledger, mutableListOf(sms)) { line -> log(line) }
@@ -62,12 +58,34 @@ class MeshRuntime private constructor(context: Context) {
         replyTo: String? = null,
     ): ReceiveResult {
         if (replyTo != null) sms.replyTo = replyTo
-        val result = engine.receive(envelope)
+        val result = engine.receive(envelope, fromTransportId = viaId)
         log(
             "$viaId: ${result.freshEvents} new, ${result.duplicates} dup, " +
                 "${result.uploaded} uploaded"
         )
         return result
+    }
+
+    /** Accepts JSON envelope, SMS AC1| chunk, or Meshtastic MC1| chunk. Returns null if incomplete/invalid. */
+    fun acceptManualInput(raw: String): Pair<String, ReceiveResult?> {
+        val text = raw.trim()
+        val now = System.currentTimeMillis()
+        return when {
+            SmsCodec.isPart(text) -> {
+                val env = pasteSmsReassembler.accept(text, now)
+                if (env == null) "sms-part-buffered" to null
+                else "paste-sms" to onEnvelope(env, "paste-sms")
+            }
+            MeshtasticCodec.isPart(text) -> {
+                val env = pasteLoRaReassembler.accept(text, now)
+                if (env == null) "lora-part-buffered" to null
+                else "paste-lora" to onEnvelope(env, "paste-lora")
+            }
+            else -> {
+                val env = MeshEnvelope.parse(text) ?: return "invalid" to null
+                "paste" to onEnvelope(env, "paste")
+            }
+        }
     }
 
     fun pump(): PumpResult = engine.pump()
