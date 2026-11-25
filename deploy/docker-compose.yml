@@ -1,0 +1,39 @@
+name: agrichain
+
+services:
+  ledger:
+    build:
+      context: ..
+      dockerfile: deploy/ledger.Dockerfile
+    image: agrichain-ledger
+    ports:
+      - "8000:8000"
+    environment:
+      LEDGER_DB: /data/ledger.db
+      # Demo default: allows POST /actors with X-Admin-Token: dev-admin-token.
+      # Set AGRICHAIN_DEV=0 and AGRICHAIN_ADMIN_TOKEN=<secret> before exposing it.
+      AGRICHAIN_DEV: "1"
+    volumes:
+      - ledger-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  webapp:
+    build:
+      context: ../webapp
+    image: agrichain-webapp
+    ports:
+      - "8080:8080"
+    environment:
+      LEDGER_URL: http://ledger:8000
+    depends_on:
+      ledger:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  ledger-data:
