@@ -51,6 +51,31 @@ class TamperRulesTest {
             )
         )
     }
+
+    @Test
+    fun `movement gate suppresses single bump and triggers on sustained hits`() {
+        val gate = TamperRules.MovementGate(requiredHits = 2, windowMs = 1_500L)
+        assertFalse(gate.record(1_000L))
+        assertTrue(gate.record(1_800L))
+        // After firing, the window resets and a stale hit does not pair with a later one.
+        assertFalse(gate.record(2_000L))
+        assertFalse(gate.record(4_000L))
+        assertTrue(gate.record(4_500L))
+    }
+
+    @Test
+    fun `gps adaptive logging requires 20 m move or 60 s heartbeat`() {
+        val baseLat = 17.385044
+        val baseLon = 78.486671
+        val t0 = 1_000_000L
+        assertTrue(TamperRules.shouldRecordGps(null, null, null, baseLat, baseLon, t0))
+        // 5 m away after 10 s -> suppressed
+        assertFalse(TamperRules.shouldRecordGps(baseLat, baseLon, t0, 17.385089, baseLon, t0 + 10_000L))
+        // 5 m away after 60 s -> heartbeat
+        assertTrue(TamperRules.shouldRecordGps(baseLat, baseLon, t0, 17.385089, baseLon, t0 + 60_000L))
+        // ~33 m away after 5 s -> distance gate
+        assertTrue(TamperRules.shouldRecordGps(baseLat, baseLon, t0, 17.385344, baseLon, t0 + 5_000L))
+    }
 }
 
 class TamperEventsTest {
@@ -93,6 +118,27 @@ class TamperEventsTest {
         )
 
         assertEquals(setOf("kind"), event.data.keys)
+    }
+
+    @Test
+    fun `tamper event accepts v2 kinds and traceHead with last fix`() {
+        val traceHead = "a".repeat(64)
+        for (kind in listOf("gps_off", "mock_location", "power")) {
+            val event = TamperEvents.create(
+                batchId = batchId,
+                signer = signer,
+                kind = kind,
+                detail = "test",
+                prevHash = "abc123",
+                traceHead = traceHead,
+                lastLat = "17.385044",
+                lastLon = "78.486671",
+            )
+            assertEquals(kind, event.data["kind"])
+            assertEquals(traceHead, event.data["traceHead"])
+            assertEquals("17.385044", event.data["lastLat"])
+            assertEquals("78.486671", event.data["lastLon"])
+        }
     }
 
     @Test

@@ -1,7 +1,12 @@
 package com.agrichain.box
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.location.Location
+import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import com.agrichain.core.ActorIdentity
 import kotlin.math.roundToInt
@@ -17,7 +22,13 @@ class BoxEngine(context: Context) {
     val identity: ActorIdentity = ActorIdentity.loadOrCreate(app, "box")
     val events = BoxEventLog(app, identity)
 
-    private val gps = GpsRecorder(app) { location -> onFix(location) }
+    private val gps = GpsRecorder(
+        app,
+        onFix = { location -> recordFix(location, force = false) },
+        onProviderDisabled = { provider ->
+            if (tamperArmed) onTamper("gps_off", "provider disabled: $provider")
+        },
+    )
     private val tamper = TamperDetector(app) { kind, detail -> onTamper(kind, detail) }
 
     @Volatile
@@ -49,6 +60,19 @@ class BoxEngine(context: Context) {
         private set
 
     private var geofenceBreached = false
+    private var lastRecordedLat: Double? = null
+    private var lastRecordedLon: Double? = null
+    private var lastRecordedTsMs: Long? = null
+    private var lastMockTamperAtMs = 0L
+    private var powerReceiverRegistered = false
+
+    private val powerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_POWER_DISCONNECTED && tamperArmed) {
+                onTamper("power", "charger disconnected")
+            }
+        }
+    }
 
     /** Called on the main thread after any state change, so the activity can redraw. */
     var onChange: (() -> Unit)? = null
@@ -71,6 +95,10 @@ class BoxEngine(context: Context) {
         geofenceLat = null
         geofenceLon = null
         geofenceBreached = false
+        lastRecordedLat = null
+        lastRecordedLon = null
+        lastRecordedTsMs = null
+        lastMockTamperAtMs = 0L
         session.bind(batchId, head)
         Log.i(TAG, "box: bound $batchId head=${short(head)}")
         notifyChange()
@@ -112,7 +140,7 @@ class BoxEngine(context: Context) {
             onMessage?.invoke("No location fix yet — set a location or move near a window")
             return false
         }
-        onFix(fix)
+        recordFix(fix, force = true)
         return true
     }
 
@@ -126,6 +154,7 @@ class BoxEngine(context: Context) {
             return
         }
         tamper.arm()
+        registerPowerReceiver()
         tamperArmed = true
         Log.i(TAG, "box: tamper detection armed (${tamper.sensorSummary()})")
         notifyChange()
@@ -134,6 +163,7 @@ class BoxEngine(context: Context) {
     fun disarmTamper() {
         if (!tamperArmed) return
         tamper.disarm()
+        unregisterPowerReceiver()
         tamperArmed = false
         Log.i(TAG, "box: tamper detection disarmed")
         notifyChange()
@@ -174,13 +204,27 @@ class BoxEngine(context: Context) {
         disarmTamper()
     }
 
-    private fun onFix(location: Location) {
+    private fun recordFix(location: Location, force: Boolean) {
         val batchId = boundBatchId ?: return
+        val nowMs = System.currentTimeMillis()
+        if (!force && !TamperRules.shouldRecordGps(
+                lastRecordedLat,
+                lastRecordedLon,
+                lastRecordedTsMs,
+                location.latitude,
+                location.longitude,
+                nowMs,
+            )
+        ) {
+            checkGeofence(location)
+            return
+        }
         val accuracy = if (location.hasAccuracy()) {
             location.accuracy.roundToInt().coerceAtLeast(0)
         } else {
             0
         }
+        val isMock = isMockLocation(location)
         val event = runCatching {
             events.appendGps(
                 batchId = batchId,
@@ -188,19 +232,52 @@ class BoxEngine(context: Context) {
                 longitude = location.longitude,
                 accuracyM = accuracy,
                 baseHead = ledgerHead,
+                mock = isMock,
             )
         }.getOrElse { error ->
             Log.w(TAG, "box: gps event failed: ${error.message}")
             onMessage?.invoke("Could not sign GPS event: ${error.message}")
             return
         }
+        lastRecordedLat = location.latitude
+        lastRecordedLon = location.longitude
+        lastRecordedTsMs = nowMs
         Log.i(
             TAG,
-            "box: GPS ${event.lat},${event.lon} ±${accuracy}m provider=${location.provider} " +
+            "box: GPS ${event.lat},${event.lon} ±${accuracy}m mock=$isMock provider=${location.provider} " +
                 "hash=${short(event.hash)}",
         )
+        if (isMock && tamperArmed) {
+            val elapsed = SystemClock.elapsedRealtime()
+            if (elapsed - lastMockTamperAtMs >= 60_000L) {
+                lastMockTamperAtMs = elapsed
+                onTamper("mock_location", "provider=${location.provider}")
+            }
+        }
         checkGeofence(location)
         notifyChange()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun isMockLocation(location: Location): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            location.isMock
+        } else {
+            location.isFromMockProvider
+        }
+
+    private fun registerPowerReceiver() {
+        if (powerReceiverRegistered) return
+        runCatching {
+            app.registerReceiver(powerReceiver, IntentFilter(Intent.ACTION_POWER_DISCONNECTED))
+            powerReceiverRegistered = true
+        }
+    }
+
+    private fun unregisterPowerReceiver() {
+        if (!powerReceiverRegistered) return
+        runCatching { app.unregisterReceiver(powerReceiver) }
+        powerReceiverRegistered = false
     }
 
     private fun onTamper(kind: String, detail: String) {

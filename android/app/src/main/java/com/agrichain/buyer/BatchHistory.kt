@@ -21,6 +21,9 @@ data class BatchHistory(
     val balances: List<Pair<String, Int>>,
     val verified: Boolean,
     val tamperCount: Int,
+    val eventCount: Int,
+    val heartbeatGaps: Int,
+    val mockCount: Int,
     val route: List<Pair<Double, Double>>,
     val events: List<HistoryEvent>,
 ) {
@@ -64,9 +67,23 @@ data class BatchHistory(
                 balances = balances,
                 verified = json.optBoolean("verified", false),
                 tamperCount = json.optInt("tamperCount"),
+                eventCount = json.optInt("eventCount", events.size),
+                heartbeatGaps = json.optInt("heartbeatGaps", countGpsGaps(events)),
+                mockCount = json.optInt("mockCount", 0),
                 route = route,
                 events = events,
             )
+        }
+
+        private const val GPS_GAP_MS = 5 * 60_000L
+
+        private fun countGpsGaps(events: List<HistoryEvent>): Int {
+            val gps = events.filter { it.type == "GPS" }.sortedBy { it.ts }
+            var gaps = 0
+            for (i in 1 until gps.size) {
+                if (gps[i].ts - gps[i - 1].ts > GPS_GAP_MS) gaps++
+            }
+            return gaps
         }
 
         fun shortActor(actorId: String): String {
@@ -86,10 +103,16 @@ data class BatchHistory(
                     append(" @ ${rupees(data.optInt("pricePerKgPaise"))}/kg")
                 }
             }
-            "GPS" -> "GPS fix ±${data.optInt("accuracyM")} m"
+            "GPS" -> buildString {
+                if (data.optBoolean("mock", false)) append("[MOCK] ")
+                append("GPS fix ±${data.optInt("accuracyM")} m")
+            }
             "TAMPER" -> buildString {
                 append("TAMPER: ${data.optString("kind")}")
                 if (data.has("detail")) append(" (${data.optString("detail")})")
+                if (data.has("lastLat") && data.has("lastLon")) {
+                    append(" @ ${data.optString("lastLat")},${data.optString("lastLon")}")
+                }
             }
             "DELIVER" -> buildString {
                 append("Delivered")

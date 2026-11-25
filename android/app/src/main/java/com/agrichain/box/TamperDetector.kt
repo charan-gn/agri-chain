@@ -22,6 +22,7 @@ class TamperDetector(
     private var lastLightLux = -1.0
     private var lastProximity = -1.0
     private val lastTriggerAt = mutableMapOf<String, Long>()
+    private val movementGate = TamperRules.MovementGate()
 
     val hasMovement: Boolean get() = accelerometer != null
     val hasLight: Boolean get() = light != null
@@ -42,6 +43,7 @@ class TamperDetector(
         lastLightLux = -1.0
         lastProximity = -1.0
         lastTriggerAt.clear()
+        movementGate.reset()
         accelerometer?.let {
             sensors.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI)
         }
@@ -67,7 +69,7 @@ class TamperDetector(
                     val x = event.values[0].toDouble()
                     val y = event.values[1].toDouble()
                     val z = event.values[2].toDouble()
-                    if (TamperRules.isMovement(x, y, z)) {
+                    if (TamperRules.isMovement(x, y, z) && movementGate.record(SystemClock.elapsedRealtime())) {
                         val delta = String.format(Locale.US, "%.1f", TamperRules.movementDelta(x, y, z))
                         emit("movement", "delta $delta m/s2")
                     }

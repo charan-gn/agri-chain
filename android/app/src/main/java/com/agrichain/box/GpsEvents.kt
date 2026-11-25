@@ -18,6 +18,7 @@ object GpsEvents {
         accuracyM: Int,
         prevHash: String,
         ts: Long = System.currentTimeMillis(),
+        mock: Boolean = false,
     ): Event {
         require(latitude in -90.0..90.0) { "Latitude out of range: $latitude" }
         require(longitude in -180.0..180.0) { "Longitude out of range: $longitude" }
@@ -27,10 +28,13 @@ object GpsEvents {
         val lon = format(longitude)
         require(COORDINATE.matches(lat) && COORDINATE.matches(lon)) { "Coordinates need 6 decimals" }
 
+        val data = linkedMapOf<String, Any?>("accuracyM" to accuracyM)
+        if (mock) data["mock"] = true
+
         return Event.create(
             batchId = batchId,
             type = "GPS",
-            data = linkedMapOf("accuracyM" to accuracyM),
+            data = data,
             signer = signer,
             ts = ts,
             lat = lat,

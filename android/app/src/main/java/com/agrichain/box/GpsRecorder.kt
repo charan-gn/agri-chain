@@ -9,7 +9,11 @@ import android.os.Bundle
 import android.os.Looper
 import android.util.Log
 
-class GpsRecorder(context: Context, private val onFix: (Location) -> Unit) {
+class GpsRecorder(
+    context: Context,
+    private val onFix: (Location) -> Unit,
+    private val onProviderDisabled: (String) -> Unit = {},
+) {
 
     private val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private var running = false
@@ -22,6 +26,7 @@ class GpsRecorder(context: Context, private val onFix: (Location) -> Unit) {
 
         override fun onProviderDisabled(provider: String) {
             Log.w(TAG, "gps: provider disabled $provider")
+            if (running) onProviderDisabled(provider)
         }
 
         @Deprecated("Deprecated in Java")

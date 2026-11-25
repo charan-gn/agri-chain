@@ -118,6 +118,19 @@ class BatchHistoryTest {
     }
 
     @Test
+    fun `parses eventCount heartbeatGaps and mockCount`() {
+        val withSignals = JSONObject(summary.toString())
+            .put("eventCount", 42)
+            .put("heartbeatGaps", 2)
+            .put("mockCount", 1)
+        val history = BatchHistory.parse(withSignals)
+
+        assertEquals(42, history.eventCount)
+        assertEquals(2, history.heartbeatGaps)
+        assertEquals(1, history.mockCount)
+    }
+
+    @Test
     fun `handles a batch with no gps and no tamper`() {
         val plain = JSONObject(
             """{"batchId":"$batchId","crop":"rice","grade":"B","initialKg":5,

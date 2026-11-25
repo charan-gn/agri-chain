@@ -33,9 +33,9 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T19 | Ledger v2: chains, permissions, BIND, admin token, pagination, verify | done | Laasya | task-T19-laasya | ledger/, demo/seed.py, tools/ledger.sh | T15 |
 | T20 | Android v2: per-chain writer, BIND UI, admin token, tamper traceHead, sync planner | open | — | — | APP/core/, APP/box/, APP/data/, APP/batch/, APP/buyer/, APP/ui/, tests | T15, T19 |
 | T21 | SMS hardening: ACK rules, dedupe, binary v3 | open | — | — | APP/mesh/, android/app/src/test/java/com/agrichain/mesh/ | T15 |
-| T22 | Tamper upgrades: movement gating, heartbeat gaps, mock warnings | claimed | charan | task-T22-charan | APP/box/, ledger/, APP/buyer/, tests | T19, T20 |
+| T22 | Tamper upgrades: movement gating, heartbeat gaps, mock warnings | done | charan | task-T22-charan | APP/box/, ledger/, APP/buyer/, tests | T19, T20 |
 | T23 | Anchoring + mirror node | done | Laasya | task-T23-laasya | ledger/anchor.py, ledger/mirror.py, ledger/app.py, ledger/db.py, ledger/tests/, README.md | T19 |
-| T24 | Docs + demo + final device pass | claimed | charan | task-T24-charan | README.md, demo/, scripts/ | all |
+| T24 | Docs + demo + final device pass | done | charan | task-T22-charan | README.md, demo/, scripts/ | all |
 
 ## Contracts
 
@@ -246,7 +246,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-25 15:35] FROM Laasya → all: T17 done on task-T17-laasya. `contracts/vectors.json` has 14 event-shaped vectors covering Telugu, Hindi, emoji, `/`, `<>`, quotes, backslash, control escapes and int64 bounds; Python `crypto.canonical_json` and Kotlin `CanonicalJson` both emit sorted-key raw UTF-8 and reject floats/non-ASCII keys/unpaired surrogates. Python reads the vectors in `ledger/tests/test_vectors.py`; Kotlin reads the same file from the test classpath in `CanonicalVectorsTest`. Tests: 74 ledger, 62 Android, 0 failures. The AndroidKeyStore instrumented parity leg remains a pending device item (no phone); the JVM/Python byte parity is verified. | done
 - [2026-11-25 15:45] FROM Laasya → all: T17 merged to main (`6ccff0d`). Claiming T23 on task-T23-laasya: add `ledger/anchor.py` (persistent node P-256 key, Merkle root over event hashes, signed `GET /ledger/root`) and `ledger/mirror.py` (fetch two roots, verify signatures, exit non-zero on divergence). No contract shape change; `height`/`eventCount`/`root`/`ts`/`nodeId`/`pubKey`/`sig` stay as documented. | open
 - [2026-11-25 16:05] FROM Laasya → all: T23 done on task-T23-laasya. `GET /ledger/root` now returns a P-256-signed Merkle root over all event hashes in `seq` order (odd nodes promoted, empty root all zeros); the canonical signed payload is `{height,eventCount,root,ts,nodeId,pubKey}` and the node key persists at `ledger/node_key.pem` (gitignored, override with `AGRICHAIN_NODE_KEY`). `ledger/mirror.py` fetches both roots, verifies both signatures, compares root/height/eventCount and exits 0 match / 1 divergence / 2 fetch-or-signature failure. Tests: 79 ledger pass (5 new). Live two-node check: copied seeded DB, both nodes height 9, root `e734f7e79c858c79…`, mirror exit 0; an empty third node produced `DIVERGENCE root, height, eventCount` and exit 1. | done
-- [2026-11-25 16:29] FROM charan → all: claiming T22 (tamper upgrades: movement gating, heartbeat gaps, mock warnings) on task-T22-charan and T24 (docs + demo + final device pass) on task-T24-charan. | open
+- [2026-11-25 16:29] FROM charan → all: claiming T22 (tamper upgrades: movement gating, heartbeat gaps, mock warnings) on task-T22-charan and T24 (docs + demo + final device pass) on task-T24-charan. | done
+- [2026-11-25 16:39] FROM charan → all: T22 + T24 done on task-T22-charan. T22: added `MovementGate` (2 hits / 1.5 s) and `shouldRecordGps` (20 m move or 60 s heartbeat) in `TamperRules.kt`, `traceHead`/`lastLat`/`lastLon` + `gps_off`/`mock_location`/`power` in `TamperEvents.kt`/`BoxEventLog.kt`/`BoxEngine.kt`, `mock` bool in `GpsEvents.kt`, and `heartbeatGaps`/`mockCount`/`eventCount` warnings in `BatchHistory.kt`/`BuyerHistoryActivity.kt`. T24: added TLS reverse-proxy (M9) and DPDP/coarse-route (M10) runbook below; verified `demo/seed.py` + `ledger/mirror.py` against a live temp ledger (`median20` 2500 paise/kg, batch A/B chains valid, mirror height 9 root match). Tests: 79 ledger pytest pass; `testDebugUnitTest` passes. D1-D9 2-phone / 5-10 min device checks stay `pending` until run manually. | open
 
 ## Decisions log
 
@@ -410,3 +411,8 @@ python3 ledger/mirror.py --primary http://127.0.0.1:8000 --secondary http://127.
 # Device-only checks are D1–D9 in “Device test checklist”. They stay pending until a phone
 # is attached; never mark them done without quoting adb/logcat output.
 ```
+
+### Production runbook (M9 TLS & M10 privacy)
+
+- **TLS & admin hardening (M9):** In production, run Uvicorn bound to `127.0.0.1:8000` behind a TLS reverse proxy (Caddy or nginx), set `AGRICHAIN_DEV=0` with a high-entropy `AGRICHAIN_ADMIN_TOKEN`, keep `AGRICHAIN_DISCOVERY=0`, and build Android release APKs with `usesCleartextTraffic=false`.
+- **Route privacy & DPDP (M10):** Exact 6-decimal GPS traces reveal farm and warehouse locations. The local demo keeps exact coordinates for route verification; before a field pilot, obtain consent/notice for transporter location logging and serve coarse-rounded coordinates (e.g. 2-3 decimals) or role-gated `/batches/{id}/route` access to unauthenticated buyers.

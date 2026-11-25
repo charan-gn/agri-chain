@@ -103,19 +103,33 @@ class BuyerHistoryActivity : AppCompatActivity() {
         binding.refreshButton.isEnabled = true
         binding.ledgerUrl.text = LedgerSettings.baseUrl(this)
 
-        if (history.verified && history.tamperCount == 0) {
-            binding.status.text = "Verified chain"
-            binding.status.setTextColor(getColor(R.color.status_ok))
-        } else if (history.tamperCount > 0) {
-            binding.status.text = "Tamper detected: ${history.tamperCount} event(s)"
-            binding.status.setTextColor(getColor(R.color.status_alert))
-        } else {
-            binding.status.text = "Chain not verified"
-            binding.status.setTextColor(getColor(R.color.status_alert))
+        when {
+            history.tamperCount > 0 || history.mockCount > 0 -> {
+                val parts = buildList {
+                    if (history.tamperCount > 0) add("${history.tamperCount} tamper")
+                    if (history.mockCount > 0) add("${history.mockCount} mock GPS")
+                    if (history.heartbeatGaps > 0) add("${history.heartbeatGaps} GPS gap(s)")
+                }
+                binding.status.text = "Warning: ${parts.joinToString(", ")}"
+                binding.status.setTextColor(getColor(R.color.status_alert))
+            }
+            history.verified && history.heartbeatGaps > 0 -> {
+                binding.status.text = "Verified with ${history.heartbeatGaps} GPS gap(s) (>5 min)"
+                binding.status.setTextColor(getColor(R.color.status_warn))
+            }
+            history.verified -> {
+                binding.status.text = "Verified chain"
+                binding.status.setTextColor(getColor(R.color.status_ok))
+            }
+            else -> {
+                binding.status.text = "Chain not verified"
+                binding.status.setTextColor(getColor(R.color.status_alert))
+            }
         }
 
         binding.details.text =
-            "${history.crop} · grade ${history.grade} · ${history.initialKg} kg initial"
+            "${history.crop} · grade ${history.grade} · ${history.initialKg} kg initial · " +
+                "${history.eventCount} events · ${history.heartbeatGaps} gaps · ${history.mockCount} mock"
         binding.owner.text = "Owner: ${BatchHistory.shortActor(history.ownerId)}"
         binding.balances.text = "Balances\n" + history.balances.joinToString("\n") { (actor, kg) ->
             "${BatchHistory.shortActor(actor)}: $kg kg"
