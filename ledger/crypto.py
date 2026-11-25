@@ -38,13 +38,52 @@ def stream_for(event_type: str) -> str:
     return "trace" if event_type == "GPS" else "main"
 
 
-def canonical_event(event: dict) -> str:
+INT64_MIN = -(2**63)
+INT64_MAX = 2**63 - 1
+
+
+def _check_json(value: object, label: str = "value") -> None:
+    if value is None or isinstance(value, bool):
+        return
+    if isinstance(value, int):
+        if value < INT64_MIN or value > INT64_MAX:
+            raise ValueError(f"{label} must fit in a signed 64-bit integer")
+        return
+    if isinstance(value, float):
+        raise ValueError(f"{label} must not be a float")
+    if isinstance(value, str):
+        if any(0xD800 <= ord(char) <= 0xDFFF for char in value):
+            raise ValueError(f"{label} contains an invalid Unicode surrogate")
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _check_json(item, f"{label}[{index}]")
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{label} keys must be strings")
+            if any(not (0x20 <= ord(char) <= 0x7E) for char in key):
+                raise ValueError(f"{label} keys must be ASCII printable")
+            _check_json(item, f"{label}.{key}")
+        return
+    raise ValueError(f"{label} must be a JSON value")
+
+
+def canonical_json(value: object) -> str:
+    """Canonical UTF-8 JSON: sorted keys, no whitespace, raw non-ASCII."""
+    _check_json(value)
     return json.dumps(
-        {field: event[field] for field in EVENT_FIELDS},
+        value,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
+        allow_nan=False,
     )
+
+
+def canonical_event(event: dict) -> str:
+    return canonical_json({field: event[field] for field in EVENT_FIELDS})
 
 
 def sha256_hex(text: str) -> str:

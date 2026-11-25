@@ -13,6 +13,9 @@ object CanonicalJson {
             is Map<*, *> -> {
                 val keys = value.keys.map {
                     require(it is String) { "JSON object keys must be strings" }
+                    require(it.all { char -> char.code in 0x20..0x7E }) {
+                        "JSON object keys must be ASCII printable"
+                    }
                     it
                 }.sorted()
                 sb.append('{')
@@ -38,13 +41,33 @@ object CanonicalJson {
 
     private fun appendString(sb: StringBuilder, value: String) {
         sb.append('"')
-        for (char in value) {
-            require(char.code in 0x20..0x7E) { "Canonical JSON is ASCII printable only" }
-            when (char) {
-                '"' -> sb.append("\\\"")
-                '\\' -> sb.append("\\\\")
+        var index = 0
+        while (index < value.length) {
+            val char = value[index]
+            when {
+                char == '"' -> sb.append("\\\"")
+                char == '\\' -> sb.append("\\\\")
+                char == '\b' -> sb.append("\\b")
+                char == '\u000C' -> sb.append("\\f")
+                char == '\n' -> sb.append("\\n")
+                char == '\r' -> sb.append("\\r")
+                char == '\t' -> sb.append("\\t")
+                char.code < 0x20 ->
+                    sb.append("\\u").append(char.code.toString(16).padStart(4, '0'))
+                char.isHighSurrogate() -> {
+                    require(index + 1 < value.length && value[index + 1].isLowSurrogate()) {
+                        "Canonical JSON strings must not contain unpaired surrogates"
+                    }
+                    sb.append(char).append(value[index + 1])
+                    index++
+                }
+                char.isLowSurrogate() ->
+                    throw IllegalArgumentException(
+                        "Canonical JSON strings must not contain unpaired surrogates"
+                    )
                 else -> sb.append(char)
             }
+            index++
         }
         sb.append('"')
     }

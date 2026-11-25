@@ -33,6 +33,10 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    sourceSets {
+        getByName("test").resources.srcDir(rootProject.file("../contracts"))
+    }
 }
 
 dependencies {
