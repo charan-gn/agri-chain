@@ -1,15 +1,20 @@
 package com.agrichain.barter
 
 import android.os.Bundle
+import android.view.Gravity
 import android.widget.ArrayAdapter
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.agrichain.R
 import com.agrichain.core.ActorIdentity
 import com.agrichain.core.Event
 import com.agrichain.databinding.ActivityBarterBinding
+import com.agrichain.qr.BatchQrCodec
+import com.google.android.material.button.MaterialButton
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import java.util.UUID
 
 class BarterActivity : AppCompatActivity() {
@@ -20,21 +25,41 @@ class BarterActivity : AppCompatActivity() {
     private var myBatches: List<BatchInfo> = emptyList()
     private var offers: List<BarterOffer> = emptyList()
 
+    private val scanPartnerLauncher = registerForActivityResult(ScanContract()) { result ->
+        val contents = result.contents ?: return@registerForActivityResult
+        val batchId = BatchQrCodec.parse(contents)
+        if (batchId == null) {
+            Toast.makeText(this, "Not an AgriChain crop QR", Toast.LENGTH_SHORT).show()
+        } else {
+            binding.wantBatchInput.setText(batchId)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityBarterBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        binding.backButton.setOnClickListener { finish() }
         signer = ActorIdentity.loadOrCreate(this, "farmer")
         client = BarterClient(this)
         binding.actorId.text = signer.actorId
+        binding.scanWantBatchButton.setOnClickListener {
+            scanPartnerLauncher.launch(
+                ScanOptions()
+                    .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                    .setPrompt("Scan the other farmer's harvest QR")
+                    .setBeepEnabled(false)
+                    .setOrientationLocked(false)
+            )
+        }
         binding.createButton.setOnClickListener { createOffer() }
         binding.refreshButton.setOnClickListener { load() }
         load()
     }
 
     private fun load() {
-        runAsync("Loading…") {
+        runAsync("Loading your harvests & trades…") {
             val batches = client.myBatches(signer.actorId)
             val loadedOffers = client.offers(signer.actorId)
             ui {
@@ -43,7 +68,7 @@ class BarterActivity : AppCompatActivity() {
                 renderBatches()
                 renderOffers()
                 binding.status.text =
-                    "${batches.size} batch(es) · ${loadedOffers.count { it.status == "open" }} open offer(s)"
+                    "${batches.size} harvest(s) ready · ${loadedOffers.count { it.status == "open" }} open trade(s)"
                 binding.status.setTextColor(getColor(R.color.status_ok))
             }
         }
@@ -62,7 +87,7 @@ class BarterActivity : AppCompatActivity() {
     private fun createOffer() {
         val batch = myBatches.getOrNull(binding.giveBatchSpinner.selectedItemPosition)
         if (batch == null) {
-            showError("No batch with tokens on the ledger")
+            showError("Upload a harvest to the server first before trading")
             return
         }
         val giveKg = binding.giveKgInput.text.toString().trim().toIntOrNull()
@@ -71,19 +96,19 @@ class BarterActivity : AppCompatActivity() {
         val withActor = binding.withActorInput.text.toString().trim()
 
         if (giveKg == null || giveKg <= 0 || wantKg == null || wantKg <= 0) {
-            showError("Give and want must be positive kg")
+            showError("Enter positive kg numbers for both sides")
             return
         }
         if (giveKg > batch.kg) {
-            showError("Give exceeds ${batch.kg} kg in this batch")
+            showError("You only have ${batch.kg} kg left in this harvest")
             return
         }
         if (wantBatchId.isEmpty() || withActor.isEmpty()) {
-            showError("Counterparty batch id and actor id are required")
+            showError("Enter or scan the other farmer's harvest code & ID")
             return
         }
 
-        runAsync("Creating offer…") {
+        runAsync("Sending trade offer…") {
             val head = client.head(batch.batchId)
             val event = Event.create(
                 batch.batchId,
@@ -105,7 +130,7 @@ class BarterActivity : AppCompatActivity() {
                 binding.wantKgInput.text?.clear()
                 binding.wantBatchInput.text?.clear()
                 binding.withActorInput.text?.clear()
-                binding.status.text = "Offer created"
+                binding.status.text = "Trade offer sent!"
                 binding.status.setTextColor(getColor(R.color.status_ok))
                 load()
             }
@@ -114,10 +139,10 @@ class BarterActivity : AppCompatActivity() {
 
     private fun accept(offer: BarterOffer) {
         if (myBatches.none { it.batchId == offer.wantBatchId }) {
-            showError("This offer wants tokens from a batch this farmer does not hold")
+            showError("This trade asks for a harvest you do not hold")
             return
         }
-        runAsync("Accepting…") {
+        runAsync("Accepting trade…") {
             val head = client.head(offer.wantBatchId)
             val event = Event.create(
                 offer.wantBatchId,
@@ -135,7 +160,7 @@ class BarterActivity : AppCompatActivity() {
             )
             client.post(event)
             ui {
-                binding.status.text = "Offer accepted — balances swapped"
+                binding.status.text = "Trade accepted — crops swapped!"
                 binding.status.setTextColor(getColor(R.color.status_ok))
                 load()
             }
@@ -143,7 +168,7 @@ class BarterActivity : AppCompatActivity() {
     }
 
     private fun cancel(offer: BarterOffer) {
-        runAsync("Cancelling…") {
+        runAsync("Cancelling trade…") {
             val head = client.head(offer.batchId)
             val event = Event.create(
                 offer.batchId,
@@ -161,7 +186,7 @@ class BarterActivity : AppCompatActivity() {
             )
             client.post(event)
             ui {
-                binding.status.text = "Offer cancelled"
+                binding.status.text = "Trade cancelled"
                 binding.status.setTextColor(getColor(R.color.status_neutral))
                 load()
             }
@@ -170,57 +195,97 @@ class BarterActivity : AppCompatActivity() {
 
     private fun renderOffers() {
         binding.offerList.removeAllViews()
+        val pad14 = dp(14)
+        val gap8 = dp(8)
         if (offers.isEmpty()) {
             binding.offerList.addView(
                 TextView(this).apply {
-                    text = "No offers yet."
-                    setPadding(0, 8, 0, 8)
+                    text = "No trade offers yet."
+                    setBackgroundResource(R.drawable.bg_card)
+                    setPadding(pad14, pad14, pad14, pad14)
+                    setTextColor(getColor(R.color.text_secondary))
+                    textSize = 15f
                 }
             )
             return
         }
+
         offers.forEach { offer ->
-            val row = LinearLayout(this).apply {
+            val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(0, 8, 0, 8)
+                setBackgroundResource(R.drawable.bg_card)
+                setPadding(pad14, pad14, pad14, pad14)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { bottomMargin = dp(10) }
             }
-            row.addView(
+
+            val topRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val badgeText = when (offer.status) {
+                "open" -> "WAITING"
+                "accepted" -> "DONE ✓"
+                else -> "CANCELLED"
+            }
+            val badgeColor = when (offer.status) {
+                "open" -> R.color.status_warn
+                "accepted" -> R.color.status_ok
+                else -> R.color.status_neutral
+            }
+            topRow.addView(
                 TextView(this).apply {
-                    text = describe(offer)
-                    textSize = 13f
+                    text = badgeText
+                    setTextColor(getColor(badgeColor))
+                    textSize = 12f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
                 }
             )
-            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            card.addView(topRow)
+
+            card.addView(
+                TextView(this).apply {
+                    text = describe(offer)
+                    setTextColor(getColor(R.color.text_primary))
+                    textSize = 15f
+                    setPadding(0, gap8 / 2, 0, gap8 / 2)
+                }
+            )
+
             if (offer.status == "open" && offer.actorId == signer.actorId) {
-                actions.addView(
-                    Button(this).apply {
-                        text = "Cancel"
+                card.addView(
+                    MaterialButton(this).apply {
+                        text = "Cancel Offer"
+                        setBackgroundColor(getColor(R.color.alert_red))
+                        setTextColor(getColor(android.R.color.white))
                         setOnClickListener { cancel(offer) }
                     }
                 )
             }
             if (offer.status == "open" && offer.withActorId == signer.actorId) {
-                actions.addView(
-                    Button(this).apply {
-                        text = "Accept"
+                card.addView(
+                    MaterialButton(this).apply {
+                        text = "Accept & Swap"
+                        setBackgroundColor(getColor(R.color.brand_green))
+                        setTextColor(getColor(android.R.color.white))
                         setOnClickListener { accept(offer) }
                     }
                 )
             }
-            if (actions.childCount > 0) row.addView(actions)
-            binding.offerList.addView(row)
+            binding.offerList.addView(card)
         }
     }
 
     private fun describe(offer: BarterOffer): String {
         val mine = offer.actorId == signer.actorId
         return if (mine) {
-            "${offer.status.uppercase()} · give ${offer.giveKg} kg from ${offer.batchId.take(8)} " +
-                "→ want ${offer.wantKg} kg of ${offer.wantBatchId.take(8)} " +
-                "from ${shortActor(offer.withActorId)}"
+            "You give ${offer.giveKg} kg (${offer.batchId.take(8)}) ⇄ " +
+                "You get ${offer.wantKg} kg (${offer.wantBatchId.take(8)}) from ${shortActor(offer.withActorId)}"
         } else {
-            "${offer.status.uppercase()} · ${shortActor(offer.actorId)} gives ${offer.giveKg} kg " +
-                "(${offer.batchId.take(8)}) for ${offer.wantKg} kg of your ${offer.wantBatchId.take(8)}"
+            "${shortActor(offer.actorId)} gives ${offer.giveKg} kg (${offer.batchId.take(8)}) ⇄ " +
+                "Wants ${offer.wantKg} kg of your ${offer.wantBatchId.take(8)}"
         }
     }
 
@@ -229,6 +294,8 @@ class BarterActivity : AppCompatActivity() {
         val rawId = actorId.substringAfter(':', "")
         return if (rawId.length >= 8) "$role:${rawId.take(8)}" else actorId
     }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun runAsync(message: String, block: () -> Unit) {
         binding.status.text = message

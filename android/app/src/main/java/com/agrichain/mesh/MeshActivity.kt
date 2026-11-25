@@ -12,6 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.agrichain.R
 import com.agrichain.databinding.ActivityMeshBinding
+import com.agrichain.ui.UiHelpers
 
 class MeshActivity : AppCompatActivity() {
 
@@ -37,11 +38,14 @@ class MeshActivity : AppCompatActivity() {
         binding = ActivityMeshBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        binding.backButton.setOnClickListener { finish() }
+        UiHelpers.wireToggle(binding.advancedHeader, binding.advancedBody, binding.advancedChevron)
+
         runtime = MeshRuntime.get(this)
         nearby = NearbyMeshTransport(this, runtime.selfId)
         runtime.logSink = { line -> ui { log(line) } }
 
-        binding.senderId.text = runtime.selfId
+        binding.senderId.text = "Phone ID: ${runtime.selfId}"
         binding.gatewayNumberInput.setText(SmsSettings.gatewayNumber(this).orEmpty())
         binding.startButton.setOnClickListener { ensurePermissions() }
         binding.stopButton.setOnClickListener { stopMesh() }
@@ -78,7 +82,7 @@ class MeshActivity : AppCompatActivity() {
         Log.i(TAG, "mesh: starting Nearby advertising and discovery as ${runtime.selfId}")
         binding.startButton.isEnabled = false
         binding.stopButton.isEnabled = true
-        binding.status.text = "Mesh running as ${runtime.selfId}"
+        binding.status.text = "Sharing is ON ✓"
         binding.status.setTextColor(getColor(R.color.status_ok))
         updateTransports()
         Thread {
@@ -94,7 +98,7 @@ class MeshActivity : AppCompatActivity() {
         Log.i(TAG, "mesh: stopped")
         binding.startButton.isEnabled = true
         binding.stopButton.isEnabled = false
-        binding.status.text = "Mesh stopped"
+        binding.status.text = "Sharing is OFF"
         binding.status.setTextColor(getColor(R.color.status_neutral))
         updateTransports()
     }
@@ -106,16 +110,16 @@ class MeshActivity : AppCompatActivity() {
                 binding.gatewayNumberInput.text.toString(),
             )
             binding.gatewayNumberInput.setText(saved.orEmpty())
-            log(if (saved == null) "Gateway cleared" else "Gateway: $saved")
+            log(if (saved == null) "Helper number cleared" else "Helper: $saved")
             updateTransports()
         } catch (error: IllegalArgumentException) {
-            log(error.message ?: "Bad number")
+            log(error.message ?: "Invalid phone number")
         }
     }
 
     private fun broadcastPending() {
         val sent = runtime.broadcastPending()
-        log("Sent queued envelope to $sent link(s)")
+        log("Sent waiting items to $sent link(s)")
         refreshPending()
     }
 
@@ -137,13 +141,13 @@ class MeshActivity : AppCompatActivity() {
     private fun copyPending() {
         val pending = runtime.pending()
         if (pending.isEmpty()) {
-            log("No queued events to copy")
+            log("No waiting items to copy")
             return
         }
         val text = MeshEnvelope.events(runtime.selfId, pending).encode()
         val clipboard = getSystemService(ClipboardManager::class.java)
         clipboard.setPrimaryClip(ClipData.newPlainText("AgriChain envelope", text))
-        log("Copied envelope with ${pending.size} event(s)")
+        log("Copied ${pending.size} waiting item(s)")
     }
 
     private fun relayPasted() {
@@ -153,7 +157,7 @@ class MeshActivity : AppCompatActivity() {
             return
         }
         val result = runtime.onEnvelope(envelope, "paste")
-        log("Pasted: ${result.freshEvents} new, ${result.uploaded} uploaded")
+        log("Received: ${result.freshEvents} new, ${result.uploaded} uploaded")
         binding.envelopeInput.text?.clear()
         refreshPending()
     }
@@ -164,16 +168,23 @@ class MeshActivity : AppCompatActivity() {
             Manifest.permission.SEND_SMS,
         ) == PackageManager.PERMISSION_GRANTED &&
             SmsSettings.gatewayNumber(this) != null
+        val internetOn = runtime.ledgerReachable()
         binding.transports.text =
-            "nearby ${if (running) "on" else "off"} · sms ${if (smsReady) "ready" else "off"} · " +
-                "internet ${if (runtime.ledgerReachable()) "on" else "off"}"
+            "Nearby ${if (running) "● ON" else "○ OFF"}  ·  " +
+                "SMS ${if (smsReady) "● Ready" else "○ Off"}  ·  " +
+                "Internet ${if (internetOn) "● ON" else "○ Off"}"
     }
 
     private fun refreshPending() {
         binding.status.post {
-            binding.status.text = "${runtime.pendingCount()} event(s) pending"
+            val count = runtime.pendingCount()
+            binding.status.text = if (count == 0) {
+                "Nothing waiting to send ✓"
+            } else {
+                "$count item(s) waiting to send"
+            }
             binding.status.setTextColor(
-                getColor(if (runtime.pendingCount() == 0) R.color.status_ok else R.color.status_neutral)
+                getColor(if (count == 0) R.color.status_ok else R.color.status_neutral)
             )
         }
     }

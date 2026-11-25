@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <path
+        android:fillColor="#FFEBEE"
+        android:pathData="M28,3A25,25 0 1,1 27.99,3Z" />
+    <!-- Chilli stem -->
+    <path
+        android:strokeColor="#2E7D32"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M34,12C32,14 31,16 32,19" />
+    <!-- Chilli body -->
+    <path
+        android:fillColor="#D32F2F"
+        android:pathData="M32,17C38,18 40,24 36,33C32,41 24,45 16,44C21,39 24,33 25,25C26,20 28,17 32,17Z" />
+    <!-- Highlight -->
+    <path
+        android:strokeColor="#FF8A80"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M31,22C30,27 28,32 24,37" />
+</vector>

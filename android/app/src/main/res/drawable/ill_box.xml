@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <!-- Soft amber circle -->
+    <path
+        android:fillColor="#FFF3E0"
+        android:pathData="M36,4A32,32 0 1,1 35.99,4Z" />
+    <!-- Wooden/parcel crate -->
+    <path
+        android:fillColor="#E65100"
+        android:pathData="M17,27L55,27L55,54C55,55.7 53.7,57 52,57L20,57C18.3,57 17,55.7 17,54Z" />
+    <!-- Crate lid -->
+    <path
+        android:fillColor="#FB8C00"
+        android:pathData="M15,22C15,20.3 16.3,19 18,19L54,19C55.7,19 57,20.3 57,22L57,27L15,27Z" />
+    <!-- Crate slats -->
+    <path
+        android:fillColor="#FFE0B2"
+        android:pathData="M23,33L49,33L49,36L23,36ZM23,43L49,43L49,46L23,46Z" />
+    <!-- GPS Pin badge -->
+    <path
+        android:fillColor="#1B5E20"
+        android:pathData="M51,14C46,14 42,18 42,23C42,29 51,37 51,37C51,37 60,29 60,23C60,18 56,14 51,14Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51,19.5A3.5,3.5 0 1,1 50.99,19.5Z" />
+</vector>

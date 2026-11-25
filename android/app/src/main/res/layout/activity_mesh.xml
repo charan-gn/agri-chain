@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/bg_cream"
     android:fillViewport="true">
 
     <LinearLayout
@@ -10,131 +12,281 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Mesh relay"
-            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
-
-        <TextView
-            android:id="@+id/senderId"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textIsSelectable="true"
-            android:textAppearance="?attr/textAppearanceBodySmall" />
-
-        <TextView
-            android:id="@+id/status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Mesh stopped"
-            android:textStyle="bold"
-            android:textAppearance="?attr/textAppearanceBodyLarge" />
-
-        <TextView
-            android:id="@+id/transports"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textAppearance="?attr/textAppearanceBodySmall" />
-
+        <!-- Header -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/startButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Start" />
+            <ImageButton
+                android:id="@+id/backButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/bg_soft_pill"
+                android:contentDescription="Back"
+                android:src="@drawable/ic_back" />
 
-            <Button
-                android:id="@+id/stopButton"
+            <ImageView
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:layout_marginStart="12dp"
+                android:contentDescription="Nearby share"
+                android:src="@drawable/ill_mesh" />
+
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
                 android:layout_weight="1"
-                android:text="Stop" />
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Phone-to-Phone"
+                    android:textColor="@color/text_primary"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Pass crop records without internet"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
         </LinearLayout>
 
-        <EditText
-            android:id="@+id/gatewayNumberInput"
+        <!-- Hero Radio Card -->
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:hint="Gateway phone (+91...)"
-            android:inputType="phone"
-            android:maxLines="1" />
-
-        <Button
-            android:id="@+id/saveGatewayButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Save gateway number" />
-
-        <Button
-            android:id="@+id/broadcastButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Send queued events" />
-
-        <Button
-            android:id="@+id/syncButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Sync to ledger now" />
-
-        <Button
-            android:id="@+id/copyButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Copy queued envelope" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="Paste an envelope (emulator fallback)"
-            android:textAppearance="?attr/textAppearanceTitleMedium" />
-
-        <EditText
-            android:id="@+id/envelopeInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="top"
-            android:hint="{&quot;v&quot;:2,&quot;k&quot;:&quot;E&quot;,…}"
-            android:inputType="textMultiLine"
-            android:minLines="3" />
-
-        <Button
-            android:id="@+id/relayButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Relay pasted envelope" />
-
-        <TextView
-            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Log"
-            android:textAppearance="?attr/textAppearanceTitleMedium" />
+            android:background="@drawable/bg_card"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="18dp">
 
-        <ScrollView
-            android:layout_width="match_parent"
-            android:layout_height="240dp"
-            android:layout_marginTop="4dp"
-            android:background="#F5F5F5"
-            android:padding="8dp">
+            <ImageView
+                android:layout_width="76dp"
+                android:layout_height="76dp"
+                android:contentDescription="Radio share"
+                android:src="@drawable/ill_mesh" />
 
             <TextView
-                android:id="@+id/log"
+                android:id="@+id/status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:textAppearance="?attr/textAppearanceBodySmall" />
-        </ScrollView>
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:text="Sharing is OFF"
+                android:textColor="@color/text_primary"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/transports"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/startButton"
+                    style="@style/AgriButton.Primary"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:text="Turn ON"
+                    app:backgroundTint="@color/barter_purple" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/stopButton"
+                    style="@style/AgriButton.Secondary"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:text="Turn OFF" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/broadcastButton"
+                style="@style/AgriButton.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Send Waiting Items Nearby" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/syncButton"
+                style="@style/AgriButton.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Upload to Server Now" />
+        </LinearLayout>
+
+        <!-- SMS Helper Phone Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Text Message Backup (SMS)"
+                android:textColor="@color/text_primary"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Send alerts to a helper phone that has internet:"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/gatewayNumberInput"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_soft_pill"
+                android:hint="Helper phone (+91...)"
+                android:inputType="phone"
+                android:maxLines="1"
+                android:paddingHorizontal="14dp"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/saveGatewayButton"
+                style="@style/AgriButton.Outline"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Save Helper Number" />
+        </LinearLayout>
+
+        <!-- Collapsible Manual Copy/Paste & Log -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_soft_pill"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <LinearLayout
+                android:id="@+id/advancedHeader"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="Advanced"
+                    android:src="@drawable/ic_settings" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:text="Manual Copy/Paste &amp; Radio Log"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <ImageView
+                    android:id="@+id/advancedChevron"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:contentDescription="Expand"
+                    android:src="@drawable/ic_chevron_down" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/advancedBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/senderId"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textIsSelectable="true"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/copyButton"
+                    style="@style/AgriButton.Outline"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Copy queued envelope"
+                    app:icon="@drawable/ic_copy"
+                    app:iconTint="@color/text_primary" />
+
+                <EditText
+                    android:id="@+id/envelopeInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_card"
+                    android:gravity="top"
+                    android:hint="{&quot;v&quot;:2,&quot;k&quot;:&quot;E&quot;,…}"
+                    android:inputType="textMultiLine"
+                    android:minLines="3"
+                    android:padding="10dp"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/relayButton"
+                    style="@style/AgriButton.Outline"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Relay pasted envelope" />
+
+                <ScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="180dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_card"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:id="@+id/log"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:textSize="11sp" />
+                </ScrollView>
+            </LinearLayout>
+        </LinearLayout>
 
     </LinearLayout>
-
 </ScrollView>

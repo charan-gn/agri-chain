@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <path
+        android:fillColor="#E3F2FD"
+        android:pathData="M28,3A25,25 0 1,1 27.99,3Z" />
+    <!-- Cotton puffs -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M28,13A7,7 0 1,1 27.99,13ZM20,20A7,7 0 1,1 19.99,20ZM36,20A7,7 0 1,1 35.99,20ZM28,22A8,8 0 1,1 27.99,22Z" />
+    <!-- Boll calyx -->
+    <path
+        android:fillColor="#5D4037"
+        android:pathData="M18,32C22,38 34,38 38,32L33,39L28,36L23,39Z" />
+    <!-- Stem -->
+    <path
+        android:fillColor="#388E3C"
+        android:pathData="M27,36L29,36L29,46L27,46Z" />
+</vector>

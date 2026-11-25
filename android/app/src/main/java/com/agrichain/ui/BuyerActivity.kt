@@ -19,8 +19,10 @@ class BuyerActivity : AppCompatActivity() {
         binding = ActivityBuyerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        binding.backButton.setOnClickListener { finish() }
         binding.ledgerUrlInput.setText(LedgerSettings.baseUrl(this))
         binding.findLedgerButton.setOnClickListener { autoDetect(announce = true) }
+        UiHelpers.wireToggle(binding.serverHeader, binding.serverBody, binding.serverChevron)
 
         binding.scanButton.setOnClickListener {
             startActivity(Intent(this, ScanActivity::class.java))
@@ -28,7 +30,7 @@ class BuyerActivity : AppCompatActivity() {
         binding.openHistoryButton.setOnClickListener {
             val batchId = binding.batchIdInput.text.toString().trim()
             if (batchId.isEmpty()) {
-                binding.urlStatus.text = "Enter a batch id first"
+                binding.batchIdInput.error = "Paste a batch code first"
             } else {
                 startActivity(BuyerHistoryActivity.intent(this, batchId))
             }
@@ -37,7 +39,7 @@ class BuyerActivity : AppCompatActivity() {
             runCatching { LedgerSettings.setBaseUrl(this, binding.ledgerUrlInput.text.toString()) }
                 .onSuccess {
                     binding.ledgerUrlInput.setText(it)
-                    binding.urlStatus.text = "Saved ledger server"
+                    binding.urlStatus.text = "Saved server: $it"
                 }
                 .onFailure { binding.urlStatus.text = it.message }
         }
@@ -48,7 +50,7 @@ class BuyerActivity : AppCompatActivity() {
         if (discovering) return
         discovering = true
         binding.findLedgerButton.isEnabled = false
-        if (announce) binding.urlStatus.text = "Searching for a ledger on USB and Wi-Fi…"
+        if (announce) binding.urlStatus.text = "Looking for server on USB and Wi-Fi…"
         LedgerDiscovery.discoverAsync(
             this,
             onLog = { line ->
@@ -66,11 +68,11 @@ class BuyerActivity : AppCompatActivity() {
                 when {
                     found != null -> {
                         binding.ledgerUrlInput.setText(found)
-                        binding.urlStatus.text = "Ledger: $found"
+                        binding.urlStatus.text = "Connected: $found"
                     }
                     announce -> {
                         binding.urlStatus.text =
-                            "No ledger found. Start ./tools/ledger.sh or ./tools/dev.sh."
+                            "No server found. Start ./tools/ledger.sh or ./tools/dev.sh."
                     }
                 }
             }
