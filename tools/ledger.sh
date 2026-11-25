@@ -32,6 +32,11 @@ fi
 echo "  dashboard: http://localhost:$PORT/"
 echo "  discovery: udp 8100 (phones auto-detect on Wi-Fi)"
 echo "  USB phone: adb reverse tcp:$PORT tcp:$PORT, host http://127.0.0.1:$PORT"
+if [[ "${AGRICHAIN_DEV:-1}" == "1" ]]; then
+  export AGRICHAIN_DEV=1
+  export AGRICHAIN_ADMIN_TOKEN="${AGRICHAIN_ADMIN_TOKEN:-dev-admin-token}"
+  echo "  admin:     X-Admin-Token: $AGRICHAIN_ADMIN_TOKEN (local demo only)"
+fi
 echo
 
 export AGRICHAIN_HTTP_PORT="$PORT"

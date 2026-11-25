@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import time
 import uuid
 
 import pytest
@@ -10,6 +11,9 @@ from fastapi.testclient import TestClient
 
 from app import create_app
 from crypto import canonical_event, sha256_hex
+
+NOW_MS = int(time.time() * 1000) - 60_000
+ADMIN_HEADERS = {"X-Admin-Token": "dev-admin-token"}
 
 
 @pytest.fixture
@@ -30,6 +34,7 @@ def make_actor(client: TestClient, role: str = "farmer") -> tuple[str, ec.Ellipt
     ).decode()
     response = client.post(
         "/actors",
+        headers=ADMIN_HEADERS,
         json={
             "actorId": actor_id,
             "name": f"Test {role}",
@@ -49,12 +54,13 @@ def make_event(
     data: dict,
     *,
     prev_hash: str = "",
-    ts: int = 1764000000000,
+    ts: int = NOW_MS,
     lat: str | None = None,
     lon: str | None = None,
+    event_id: str | None = None,
 ) -> dict:
     fields = {
-        "eventId": str(uuid.uuid4()),
+        "eventId": event_id or str(uuid.uuid4()),
         "batchId": batch_id,
         "type": event_type,
         "actorId": actor_id,
@@ -126,6 +132,7 @@ def test_actor_key_cannot_change(client):
     ).decode()
     response = client.post(
         "/actors",
+        headers=ADMIN_HEADERS,
         json={
             "actorId": actor_id,
             "name": "Impostor",
@@ -166,11 +173,19 @@ def test_register_batch_and_read_summary(client, farmer):
     assert len(summary["events"]) == 1
 
     verification = client.get(f"/batches/{batch_id}/verify").json()
-    assert verification == {
-        "valid": True,
-        "events": 1,
-        "head": event["hash"],
-    }
+    assert verification["valid"] is True
+    assert verification["eventCount"] == 1
+    assert verification["permissions"] == {"valid": True, "errors": []}
+    assert verification["balances"] == {actor_id: 100}
+    assert verification["chains"] == [
+        {
+            "actorId": actor_id,
+            "stream": "main",
+            "head": event["hash"],
+            "count": 1,
+            "valid": True,
+        }
+    ]
 
 
 def test_rejects_bad_hash_and_signature(client, farmer):
@@ -194,7 +209,7 @@ def test_rejects_bad_hash_and_signature(client, farmer):
     bad_sig["sig"] = base64.b64encode(b"not a signature").decode()
     response = client.post("/events", json=bad_sig)
     assert response.status_code == 400
-    assert response.json()["error"] == "bad_signature"
+    assert response.json()["error"] == "bad_sig"
 
     unknown_actor = dict(event)
     unknown_actor["actorId"] = f"farmer:{uuid.uuid4()}"
@@ -204,31 +219,55 @@ def test_rejects_bad_hash_and_signature(client, farmer):
 
 
 def test_prev_hash_must_match_head(client, farmer):
-    actor_id, key = farmer
+    farmer_id, farmer_key = farmer
+    box_id, box_key = make_actor(client, "box")
     batch_id = str(uuid.uuid4())
     register = make_event(
-        actor_id,
-        key,
+        farmer_id,
+        farmer_key,
         batch_id,
         "REGISTER",
         {"crop": "maize", "grade": "A", "weightKg": 20},
     )
     assert client.post("/events", json=register).status_code == 201
 
+    bind = make_event(
+        farmer_id,
+        farmer_key,
+        batch_id,
+        "BIND",
+        {"boxId": box_id},
+        prev_hash=register["hash"],
+    )
+    assert client.post("/events", json=bind).status_code == 201
+
     gps = make_event(
-        actor_id,
-        key,
+        box_id,
+        box_key,
         batch_id,
         "GPS",
         {"accuracyM": 8},
-        prev_hash="",
         lat="17.385044",
         lon="78.486671",
     )
-    response = client.post("/events", json=gps)
+    assert client.post("/events", json=gps).status_code == 201
+
+    stale = make_event(
+        box_id,
+        box_key,
+        batch_id,
+        "GPS",
+        {"accuracyM": 8},
+        prev_hash=register["hash"],
+        lat="17.385044",
+        lon="78.486671",
+    )
+    response = client.post("/events", json=stale)
     assert response.status_code == 409
     assert response.json()["error"] == "prev_mismatch"
-    assert response.json()["head"] == register["hash"]
+    assert response.json()["chain"] == {"actorId": box_id, "stream": "trace"}
+    assert response.json()["head"] == gps["hash"]
+    assert response.json()["chainSeq"] == 1
 
 
 def test_transfer_moves_balance(client, farmer):
@@ -399,7 +438,7 @@ def test_buyer_can_resell_received_tokens(client, farmer):
         farmer_key,
         batch_id,
         "TRANSFER",
-        {"toActorId": buyer_id, "tokens": 40, "pricePerKgPaise": 2000},
+        {"toActorId": buyer_id, "tokens": 60, "pricePerKgPaise": 2000},
         prev_hash=register["hash"],
     )
     assert client.post("/events", json=farmer_transfer).status_code == 201
@@ -410,14 +449,14 @@ def test_buyer_can_resell_received_tokens(client, farmer):
         batch_id,
         "TRANSFER",
         {"toActorId": final_buyer_id, "tokens": 15, "pricePerKgPaise": 3000},
-        prev_hash=farmer_transfer["hash"],
+        prev_hash="",
     )
     assert client.post("/events", json=buyer_transfer).status_code == 201
 
     summary = client.get(f"/batches/{batch_id}").json()
     assert summary["balances"] == {
-        farmer_id: 60,
-        buyer_id: 25,
+        farmer_id: 40,
+        buyer_id: 45,
         final_buyer_id: 15,
     }
     assert summary["verified"] is True
@@ -447,7 +486,7 @@ def test_trade_price_is_median20(client, farmer):
             "TRANSFER",
             {"toActorId": buyer_id, "tokens": 10, "pricePerKgPaise": price},
             prev_hash=previous,
-            ts=1764000001000 + index,
+            ts=NOW_MS + 1000 + index,
         )
         assert client.post("/events", json=event).status_code == 201
         priced.append(event)
@@ -460,7 +499,7 @@ def test_trade_price_is_median20(client, farmer):
         "TRANSFER",
         {"toActorId": actor_id, "tokens": 1, "pricePerKgPaise": 99999},
         prev_hash=previous,
-        ts=1764000002000,
+        ts=NOW_MS + 2000,
     )
     assert client.post("/events", json=self_trade).status_code == 201
     previous = self_trade["hash"]
@@ -472,7 +511,7 @@ def test_trade_price_is_median20(client, farmer):
         "TRANSFER",
         {"toActorId": buyer_id, "tokens": 5},
         prev_hash=previous,
-        ts=1764000003000,
+        ts=NOW_MS + 3000,
     )
     assert client.post("/events", json=no_price).status_code == 201
 

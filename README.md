@@ -30,7 +30,7 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T16 | Device readiness: permissions, box foreground service, SMS default SIM, scripts/dev.sh | done | charan | task-T16-device-readiness-charan | APP/box/, APP/mesh/, APP/core/Permissions.kt, APP/MainActivity.kt, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{main,box,mesh}.xml, android/app/src/main/res/drawable/, android/app/build.gradle.kts, scripts/dev.sh, README.md | — |
 | T17 | Canonical JSON vectors + on-device parity | open | — | — | contracts/, ledger/tests/, android/app/src/test/, android/app/src/androidTest/ | — |
 | T18 | Remove mandi, add token price (median20) | done | Laasya | task-T18-laasya | ledger/prices.py, ledger/app.py, ledger/tokens.py, ledger/validation.py, ledger/tests/, APP/prices/, APP/buyer/, APP/mesh/HttpLedgerGateway.kt, layouts, manifest, demo/seed.py, ledger/web/, README.md | - |
-| T19 | Ledger v2: chains, permissions, BIND, admin token, pagination, verify | claimed | Laasya | task-T19-laasya | ledger/ | T15 |
+| T19 | Ledger v2: chains, permissions, BIND, admin token, pagination, verify | done | Laasya | task-T19-laasya | ledger/, demo/seed.py, tools/ledger.sh | T15 |
 | T20 | Android v2: per-chain writer, BIND UI, admin token, tamper traceHead, sync planner | open | — | — | APP/core/, APP/box/, APP/data/, APP/batch/, APP/buyer/, APP/ui/, tests | T15, T19 |
 | T21 | SMS hardening: ACK rules, dedupe, binary v3 | open | — | — | APP/mesh/, android/app/src/test/java/com/agrichain/mesh/ | T15 |
 | T22 | Tamper upgrades: movement gating, heartbeat gaps, mock warnings | open | — | — | APP/box/, ledger/, APP/buyer/, tests | T19, T20 |
@@ -241,6 +241,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-25 14:40] FROM Laasya → all: claiming T19 on task-T19-laasya. Implement ledger v2 in `ledger/` only: per-`(batchId, actorId, stream)` heads and `chainSeq`, BIND + permission matrix, admin token and per-IP rate limit, `receivedAt`/clock skew, `/events` pagination, `/batches/{id}/route`, `/verify`, `/events/bulk`, and keep median20 `/trades`. Android v2 is T20; I will not touch `APP/`. | open
 - [2026-11-25 13:20] FROM charan → all: audit round 2 board added as T15-T24 (old T15/T16 stay complete in history). I am claiming T16 device readiness: permissions per API level, box foreground service, default-SIM SMS, and `scripts/dev.sh`. I will touch only the T16 paths; T15 docs, T17 vectors and T18 token prices are free. | open
 - [2026-11-25 13:45] FROM charan → all: T16 done on task-T16-device-readiness-charan. One permission flow in `APP/core/Permissions.kt` names every denied runtime permission (API 31 Bluetooth, API 33 Nearby Wi-Fi + notifications, SMS, location, camera); the box runs GPS/tamper in a location foreground service with a partial wake lock; SMS sends on the default SMS subscription and logs sent/delivered; every log tag is `AgriChain`; `scripts/dev.sh` holds the adb cheat sheet. Device evidence: `permissions: all 10 granted`; after revoking one, `permissions: denied 1/10: android.permission.NEARBY_WIFI_DEVICES`; box `isForeground=true`, `mWakefulness=Asleep` at start and end, 90 signed GPS events over 2 min; `mesh: nearby: advertising as phone-1a373543`; no AndroidRuntime crash. Actual SMS sent/delivered and 2-phone radio tests remain manual. | done
+- [2026-11-25 15:05] FROM Laasya → all: T19 done on task-T19-laasya. Ledger v2 is live in `ledger/`: per-`(batchId, actorId, stream)` heads with server `chainSeq`, BIND + the permission matrix, `X-Admin-Token` on `POST /actors`, per-IP rate limit, `receivedAt` + 5 min/30 day skew, `/events` pagination, `/batches/{id}/route`, `/verify`, `/events/bulk`, idempotency conflict, and median20 `/trades`. `demo/seed.py` now BINDs the box, writes GPS on `box/trace` and TAMPER on `box/main`, sends the admin token, and `tools/ledger.sh` defaults `AGRICHAIN_DEV=1` (`dev-admin-token`) for local demos. Touches extended to `demo/seed.py` + `tools/ledger.sh` for that integration. Tests: 37 ledger pass (9 new v2 regressions). Live seed on a temp ledger: batch A/B chains both `valid`, wheat `2500` paise/kg, sample 2. No phone attached; device checks stay pending. T20 (Android v2) is next. | done
 
 ## Decisions log
 
@@ -275,6 +276,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-25 Laasya: phone-dependent checks are listed in “Device test checklist”. No phone is attached to this workstation, so D1–D9 stay `pending`; code/tests that run on the JVM/Python are still verified locally.
 - 2026-11-25 charan: audit round 2 reuses T15-T24. The pre-audit T15/T16 (laptop runner, auto-detect) remain complete in git history; new work uses suffixed branches such as `task-T16-device-readiness-charan`.
 - 2026-11-25 charan: T16 keeps one runtime permission list in `APP/core/Permissions.kt`; MainActivity requests it and names every denial. The box runs `GpsRecorder` and `TamperDetector` in `BoxService` (foreground type location + partial wake lock) through the shared `BoxEngine`, so closing the activity or turning the screen off does not stop logging. SMS uses the default SMS subscription and `SmsStatusReceiver` logs the carrier sent/delivered result. Every log tag is `AgriChain`. `scripts/dev.sh` is the adb cheat sheet; `--es openBox <uuid> --ez autoStart true` and `--ez openMesh true --ez autoStart true` on MainActivity are dev-only launch hooks.
+- 2026-11-25 Laasya: T19 implements the v2 contract without changing signed bytes. `events` gains `stream`/`chain_seq`/`received_at`; the chain key is `(batch_id, actor_id, stream)` and `chain_seq` starts at 1 per chain. Opening a v1 database migrates rows by assigning `stream` from the event type and numbering each actor's chain, but it does not rewrite old `prevHash` values, so pre-v2 rows stay readable while `/verify` may report a legacy chain as broken. `demo/seed.py` and `tools/ledger.sh` were updated for admin-token registration because the demo must keep working end to end.
 
 ## Blockers
 
@@ -303,6 +305,8 @@ Run (updated as tasks land):
 
 ```bash
 # Ledger + dashboard (T4, T15). Auto-creates .venv if deps are missing.
+# Local demo defaults AGRICHAIN_DEV=1 (admin token dev-admin-token); set
+# AGRICHAIN_DEV=0 to close actor registration.
 ./tools/ledger.sh
 # Dashboard: http://localhost:8000/  ·  API docs: /docs
 # LAN phones: use the printed http://<laptop-ip>:8000 URL, or let the app auto-detect

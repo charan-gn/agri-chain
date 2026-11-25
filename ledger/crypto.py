@@ -24,12 +24,18 @@ EVENT_FIELDS = (
 
 ALLOWED_TYPES = {
     "REGISTER",
+    "BIND",
     "TRANSFER",
     "GPS",
     "TAMPER",
     "DELIVER",
     "BARTER",
 }
+
+
+def stream_for(event_type: str) -> str:
+    """Chain stream: GPS fixes are trace evidence, everything else is main."""
+    return "trace" if event_type == "GPS" else "main"
 
 
 def canonical_event(event: dict) -> str:

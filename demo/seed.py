@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Seed a running AgriChain ledger with the full demo story.
+"""Seed a running AgriChain ledger with the full v2 demo story.
 
-    cd ledger && uvicorn app:app --host 0.0.0.0 --port 8000
+    AGRICHAIN_DEV=1 ./tools/ledger.sh
     python3 demo/seed.py --base-url http://127.0.0.1:8000
 
-Registers four actors, two batches, box GPS + tamper events, two priced
-transfers, and a barter offer/accept. Prints the batch ids to paste into the
-Android Buyer screen and the reported token price (median of the last 20
-priced transfers).
+Registers four actors, two batches, a BIND, box GPS + tamper events on their
+own chains, two priced transfers, and a barter offer/accept. Prints the batch
+ids to paste into the Android Buyer screen and the reported token price
+(median of the last 20 priced transfers).
+
+`POST /actors` needs `X-Admin-Token`. The default is `dev-admin-token`, which
+the ledger accepts when it runs with `AGRICHAIN_DEV=1`; pass `--admin-token`
+or set `AGRICHAIN_ADMIN_TOKEN` to use another token.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ import argparse
 import base64
 import itertools
 import json
+import os
 import sys
 import time
 import uuid
@@ -29,6 +34,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "ledger"))
 from crypto import canonical_event, sha256_hex  # noqa: E402
 
+ADMIN_TOKEN = os.environ.get("AGRICHAIN_ADMIN_TOKEN", "dev-admin-token")
+
 
 def call(base: str, method: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -36,7 +43,11 @@ def call(base: str, method: str, path: str, payload: dict | None = None) -> tupl
         base + path,
         data=data,
         method=method,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Admin-Token": ADMIN_TOKEN,
+        },
     )
     try:
         with request.urlopen(req, timeout=15) as response:
@@ -105,14 +116,27 @@ class Actor:
 
 def post(base: str, event: dict, label: str) -> str:
     _, body = call(base, "POST", "/events", event)
-    print(f"  {label:<22} {event['type']:<8} head {body['head'][:12]}…")
+    chain = body.get("chain", {})
+    print(
+        f"  {label:<22} {event['type']:<8} "
+        f"{chain.get('actorId', '?').split(':', 1)[0]}/{chain.get('stream', '?')} "
+        f"#{chain.get('chainSeq', '?')} {body['head'][:12]}…"
+    )
     return body["head"]
 
 
 def main() -> None:
+    global ADMIN_TOKEN
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
+    parser.add_argument(
+        "--admin-token",
+        default=ADMIN_TOKEN,
+        help="X-Admin-Token for POST /actors (default: env or dev-admin-token)",
+    )
     args = parser.parse_args()
+    ADMIN_TOKEN = args.admin_token
     base = args.base_url.rstrip("/")
 
     _, health = call(base, "GET", "/health")
@@ -152,25 +176,41 @@ def main() -> None:
     )
     head_b = post(base, register_b, "Meena registers rice")
 
+    bind = farmer_a.event(
+        batch_a,
+        "BIND",
+        {"boxId": box.actor_id},
+        head_a,
+        ts=now(),
+    )
+    head_a = post(base, bind, "Ravi authorizes Box 7")
+
+    # The box has its own trace chain for GPS and its own main chain for TAMPER.
     gps = box.event(
         batch_a,
         "GPS",
-        {"accuracyM": 6},
-        head_a,
+        {"accuracyM": 6, "mock": False},
+        "",
         ts=now(),
         lat="17.385044",
         lon="78.486671",
     )
-    head_a = post(base, gps, "Box GPS fix")
+    gps_head = post(base, gps, "Box GPS fix")
 
     tamper = box.event(
         batch_a,
         "TAMPER",
-        {"kind": "light", "detail": "lid opened"},
-        head_a,
+        {
+            "kind": "light",
+            "detail": "lid opened",
+            "traceHead": gps_head,
+            "lastLat": "17.385044",
+            "lastLon": "78.486671",
+        },
+        "",
         ts=now(),
     )
-    head_a = post(base, tamper, "Box tamper")
+    post(base, tamper, "Box tamper")
 
     transfer_a = farmer_a.event(
         batch_a,
@@ -181,14 +221,14 @@ def main() -> None:
     )
     head_a = post(base, transfer_a, "Ravi sells 10 kg")
 
-    transfer_b = buyer.event(
+    transfer_b = farmer_a.event(
         batch_a,
         "TRANSFER",
         {"toActorId": farmer_b.actor_id, "tokens": 5, "pricePerKgPaise": 3000},
         head_a,
         ts=now(),
     )
-    head_a = post(base, transfer_b, "Buyer resells 5 kg")
+    head_a = post(base, transfer_b, "Ravi sells 5 kg to Meena")
 
     offer_id = str(uuid.uuid4())
     offer = farmer_a.event(
@@ -227,6 +267,7 @@ def main() -> None:
     _, summary_a = call(base, "GET", f"/batches/{batch_a}")
     _, summary_b = call(base, "GET", f"/batches/{batch_b}")
     _, verify_a = call(base, "GET", f"/batches/{batch_a}/verify")
+    _, verify_b = call(base, "GET", f"/batches/{batch_b}/verify")
 
     print("\nLedger state")
     price = trades.get("pricePerKgPaise")
@@ -237,7 +278,8 @@ def main() -> None:
     print(f"  batch A balances    {summary_a['balances']}")
     print(f"  batch B balances    {summary_b['balances']}")
     print(f"  batch A tamper      {summary_a['tamperCount']} event(s)")
-    print(f"  batch A chain       {'valid' if verify_a['valid'] else 'BROKEN'}")
+    print(f"  batch A chains      {'valid' if verify_a['valid'] else 'BROKEN'}")
+    print(f"  batch B chains      {'valid' if verify_b['valid'] else 'BROKEN'}")
     print(f"  batch A owner       {summary_a['ownerId']}")
 
     print("\nAndroid Buyer screen (scan or paste the batch id)")

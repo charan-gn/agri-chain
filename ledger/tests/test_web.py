@@ -33,6 +33,7 @@ def test_dashboard_and_static_assets_are_served(client):
 
 def test_stats_and_recent_events(client):
     farmer_id, key = make_actor(client)
+    box_id, box_key = make_actor(client, "box")
     batch_id = str(uuid.uuid4())
     register = make_event(
         farmer_id,
@@ -43,24 +44,32 @@ def test_stats_and_recent_events(client):
     )
     assert client.post("/events", json=register).status_code == 201
 
-    tamper = make_event(
+    bind = make_event(
         farmer_id,
         key,
         batch_id,
+        "BIND",
+        {"boxId": box_id},
+        prev_hash=register["hash"],
+    )
+    assert client.post("/events", json=bind).status_code == 201
+
+    tamper = make_event(
+        box_id,
+        box_key,
+        batch_id,
         "TAMPER",
         {"kind": "light", "detail": "lid opened"},
-        prev_hash=register["hash"],
-        ts=1764000001000,
     )
     assert client.post("/events", json=tamper).status_code == 201
 
     stats = client.get("/stats?limit=5").json()
-    assert stats["actors"] == 1
+    assert stats["actors"] == 2
     assert stats["batches"] == 1
-    assert stats["events"] == 2
+    assert stats["events"] == 3
     assert stats["tamperEvents"] == 1
     assert stats["validChains"] == 1
-    assert [event["type"] for event in stats["recent"]] == ["TAMPER", "REGISTER"]
+    assert [event["type"] for event in stats["recent"]] == ["TAMPER", "BIND", "REGISTER"]
     assert stats["recent"][0]["crop"] == "wheat"
 
     recent = client.get("/events/recent?limit=1").json()

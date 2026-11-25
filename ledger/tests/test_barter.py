@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import create_app
-from test_ledger import make_actor, make_event
+from test_ledger import NOW_MS, make_actor, make_event
 
 
 @pytest.fixture
@@ -38,7 +38,7 @@ def barter_event(
     give_kg,
     want_batch,
     want_kg,
-    ts=1764000000000,
+    ts=NOW_MS,
 ):
     return make_event(
         actor_id,

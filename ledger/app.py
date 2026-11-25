@@ -16,10 +16,11 @@ from fastapi.staticfiles import StaticFiles
 from crypto import (
     canonical_event,
     sha256_hex,
+    stream_for,
     validate_public_key,
     verify_signature,
 )
-from db import BatchNotFound, EventConflict, LedgerDb, PrevMismatch
+from db import BatchExists, BatchNotFound, EventConflict, LedgerDb, PrevMismatch
 from discovery import start_discovery
 from barter import (
     BarterError,
@@ -34,6 +35,8 @@ from validation import PriceRemoved, ValidationError, validate_actor_registratio
 
 DEFAULT_DB = Path(__file__).resolve().parent / "ledger.db"
 WEB_DIR = Path(__file__).resolve().parent / "web"
+GPS_GAP_MS = 5 * 60 * 1000
+RETRY_ERRORS = {"prev_mismatch", "unbound_box", "batch_unknown", "rate_limited"}
 
 
 def http_port() -> int:
@@ -50,9 +53,18 @@ def http_port() -> int:
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, error: str, detail: str = "", **extra: Any) -> None:
+    def __init__(
+        self,
+        status: int,
+        error: str,
+        detail: str = "",
+        retry: bool | None = None,
+        **extra: Any,
+    ) -> None:
         self.status = status
-        self.payload = {"error": error, "detail": detail, **extra}
+        if retry is None:
+            retry = error in RETRY_ERRORS
+        self.payload = {"error": error, "detail": detail, "retry": retry, **extra}
         super().__init__(detail)
 
 
@@ -69,141 +81,257 @@ def event_out(row: dict) -> dict:
         "prevHash": row["prev_hash"],
         "hash": row["hash"],
         "sig": row["sig"],
+        "chainSeq": int(row.get("chain_seq") or 0),
+        "receivedAt": int(row.get("received_at") or row.get("created_at") or 0),
     }
 
 
-def load_batches(db: LedgerDb) -> dict[str, list[dict]]:
-    return {
-        batch_id: [event_out(row) for row in db.events_for_batch(batch_id)]
-        for batch_id in db.register_batches()
-    }
+def load_batches(db: LedgerDb, before_seq: int | None = None) -> dict[str, list[dict]]:
+    batches: dict[str, list[dict]] = {}
+    for batch_id in db.register_batches():
+        rows = db.events_for_batch(batch_id)
+        if before_seq is not None:
+            rows = [row for row in rows if row["seq"] < before_seq]
+        batches[batch_id] = [event_out(row) for row in rows]
+    return batches
 
 
-def append_one(db: LedgerDb, raw: Any) -> dict:
-    try:
-        event = validate_event(raw)
-    except PriceRemoved as exc:
-        raise ApiError(400, "price_removed", str(exc))
-    except ValidationError as exc:
-        raise ApiError(400, "bad_event", str(exc))
+def latest_bind(rows: list[dict]) -> dict | None:
+    latest = None
+    for row in rows:
+        if row["type"] != "BIND":
+            continue
+        data = json.loads(row["data_json"])
+        latest = {
+            "boxId": data.get("boxId"),
+            "expiresAt": data.get("expiresAt"),
+            "seq": row["seq"],
+        }
+    return latest
 
-    actor = db.get_actor(event["actorId"])
-    if not actor:
-        raise ApiError(422, "unknown_actor", "actor is not registered")
 
-    canonical = canonical_event(event)
-    if event["hash"] != sha256_hex(canonical):
-        raise ApiError(400, "bad_hash", "hash does not match the canonical event")
+def bind_active(bind: dict | None, at_ts: int) -> bool:
+    if not bind or not bind.get("boxId"):
+        return False
+    expires_at = bind.get("expiresAt")
+    if expires_at is not None and expires_at <= at_ts:
+        return False
+    return True
 
-    if not verify_signature(actor["pub_key"], event["sig"], canonical.encode("utf-8")):
-        raise ApiError(400, "bad_signature", "signature does not verify for the actor")
 
-    history = [event_out(row) for row in db.events_for_batch(event["batchId"])]
-    already_stored = any(
-        item["eventId"] == event["eventId"] and item["hash"] == event["hash"]
-        for item in history
+def holder_id(rows: list[dict], balances: dict[str, int]) -> str | None:
+    if not balances:
+        return None
+    last_seq: dict[str, int] = {}
+    for row in rows:
+        if row["type"] != "TRANSFER":
+            continue
+        data = json.loads(row["data_json"])
+        last_seq[row["actor_id"]] = row["seq"]
+        last_seq[data["toActorId"]] = row["seq"]
+    return max(balances, key=lambda actor: (balances[actor], last_seq.get(actor, 0)))
+
+
+def state_for(
+    db: LedgerDb,
+    batch_id: str,
+    before_seq: int | None = None,
+) -> tuple[dict[str, list[dict]], dict[str, dict], dict[str, int], list[dict]]:
+    batches = load_batches(db, before_seq)
+    rows = [
+        row
+        for row in db.events_for_batch(batch_id)
+        if before_seq is None or row["seq"] < before_seq
+    ]
+    offers = derive_offers(batches)
+    balances = apply_deltas(
+        compute_balances(batches.get(batch_id, [])),
+        barter_deltas(offers).get(batch_id),
     )
-    if not already_stored and event["type"] in {"BARTER", "TRANSFER"}:
-        batches = load_batches(db)
-        offers = derive_offers(batches)
-        if event["type"] == "BARTER":
-            try:
-                validate_barter_event(event, batches, offers)
-            except BarterError as exc:
-                raise ApiError(exc.status, exc.code, exc.detail, **exc.extra)
-        else:
-            balances = apply_deltas(
-                compute_balances(history),
-                barter_deltas(offers).get(event["batchId"]),
+    return batches, offers, balances, rows
+
+
+def check_permission(
+    event: dict,
+    actor_role: str,
+    rows: list[dict],
+    batches: dict[str, list[dict]],
+    offers: dict[str, dict],
+    balances: dict[str, int],
+    at_ts: int,
+) -> None:
+    event_type = event["type"]
+    actor_id = event["actorId"]
+    holder = holder_id(rows, balances)
+
+    if event_type == "REGISTER":
+        if actor_role != "farmer":
+            raise ApiError(403, "forbidden", "only a farmer can register a batch")
+        if any(row["type"] == "REGISTER" for row in rows):
+            raise ApiError(409, "batch_exists", "batch is already registered")
+        return
+
+    if not rows:
+        raise ApiError(409, "batch_unknown", "batch has no REGISTER event")
+
+    bind = latest_bind(rows)
+    bound = bind_active(bind, at_ts)
+
+    if event_type == "BIND":
+        if actor_id != holder:
+            raise ApiError(403, "forbidden", "only the current holder can bind a box")
+    elif event_type == "TRANSFER":
+        if actor_id != holder:
+            raise ApiError(403, "forbidden", "only the current holder can transfer")
+        available = balances.get(actor_id, 0)
+        requested = int(event["data"]["tokens"])
+        if requested > available:
+            raise ApiError(
+                409,
+                "insufficient_balance",
+                "transfer exceeds the sender's balance",
+                balance=available,
             )
-            requested = int(event["data"]["tokens"])
-            available = balances.get(event["actorId"], 0)
-            if requested > available:
-                raise ApiError(
-                    409,
-                    "insufficient_balance",
-                    "transfer exceeds the sender's balance",
-                    balance=available,
-                )
-
-    data_json = json.dumps(
-        event["data"],
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
-    try:
-        seq, head = db.append_event(event, data_json, int(time.time() * 1000))
-    except PrevMismatch as exc:
-        raise ApiError(
-            409,
-            "prev_mismatch",
-            "event does not extend the current batch head",
-            head=exc.head,
-        )
-    except BatchNotFound:
-        raise ApiError(404, "batch_not_found", "batch has no REGISTER event")
-    except EventConflict as exc:
-        raise ApiError(409, "event_conflict", str(exc))
-
-    return {"ok": True, "batchId": event["batchId"], "head": head, "seq": seq}
+    elif event_type in {"GPS", "TAMPER"}:
+        if actor_role != "box":
+            raise ApiError(403, "forbidden", "only a box can post GPS or TAMPER")
+        if not bound or bind["boxId"] != actor_id:
+            raise ApiError(409, "unbound_box", "box is not bound to this batch")
+    elif event_type == "DELIVER":
+        if actor_id != holder and not (
+            actor_role == "box" and bound and bind["boxId"] == actor_id
+        ):
+            raise ApiError(403, "forbidden", "only the holder or the bound box can deliver")
+    elif event_type == "BARTER":
+        if actor_id != holder:
+            raise ApiError(403, "forbidden", "only the current holder can barter")
+        validate_barter_event(event, batches, offers)
 
 
-def verify_events(db: LedgerDb, rows: list[dict]) -> dict:
-    head = ""
-    last_hash = rows[-1]["hash"] if rows else ""
+def verify_chains(db: LedgerDb, rows: list[dict]) -> list[dict]:
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for row in rows:
+        groups.setdefault((row["actor_id"], row["stream"]), []).append(row)
+
+    chains = []
+    for (actor_id, stream), chain_rows in groups.items():
+        chain_rows.sort(key=lambda row: row["chain_seq"])
+        head = ""
+        valid = True
+        broken_at = None
+        reason = None
+        for row in chain_rows:
+            event = event_out(row)
+            if event["prevHash"] != head:
+                valid = False
+                broken_at = event["eventId"]
+                reason = "prevHash does not match the preceding event"
+                break
+            canonical = canonical_event(event)
+            if event["hash"] != sha256_hex(canonical):
+                valid = False
+                broken_at = event["eventId"]
+                reason = "hash does not match the canonical event"
+                break
+            actor = db.get_actor(event["actorId"])
+            if not actor or not verify_signature(
+                actor["pub_key"], event["sig"], canonical.encode("utf-8")
+            ):
+                valid = False
+                broken_at = event["eventId"]
+                reason = "signature does not verify"
+                break
+            head = event["hash"]
+        chain = {
+            "actorId": actor_id,
+            "stream": stream,
+            "head": chain_rows[-1]["hash"],
+            "count": len(chain_rows),
+            "valid": valid,
+        }
+        if broken_at is not None:
+            chain["brokenAt"] = broken_at
+            chain["reason"] = reason
+        chains.append(chain)
+    return chains
+
+
+def verify_permissions(db: LedgerDb, batch_id: str, rows: list[dict]) -> dict:
+    errors = []
     for row in rows:
         event = event_out(row)
-        if event["prevHash"] != head:
-            return {
-                "valid": False,
-                "events": len(rows),
-                "head": last_hash,
-                "brokenAt": event["eventId"],
-                "reason": "prevHash does not match the preceding event",
-            }
-        canonical = canonical_event(event)
-        if event["hash"] != sha256_hex(canonical):
-            return {
-                "valid": False,
-                "events": len(rows),
-                "head": last_hash,
-                "brokenAt": event["eventId"],
-                "reason": "hash does not match the canonical event",
-            }
         actor = db.get_actor(event["actorId"])
-        if not actor or not verify_signature(
-            actor["pub_key"], event["sig"], canonical.encode("utf-8")
-        ):
-            return {
-                "valid": False,
-                "events": len(rows),
-                "head": last_hash,
-                "brokenAt": event["eventId"],
-                "reason": "signature does not verify",
-            }
-        head = event["hash"]
-    return {"valid": True, "events": len(rows), "head": head}
+        if not actor:
+            errors.append(
+                {
+                    "eventId": event["eventId"],
+                    "error": "unknown_actor",
+                    "detail": "actor is not registered",
+                }
+            )
+            continue
+        batches, offers, balances, prefix = state_for(db, batch_id, before_seq=row["seq"])
+        try:
+            check_permission(
+                event,
+                actor["role"],
+                prefix,
+                batches,
+                offers,
+                balances,
+                event["ts"],
+            )
+        except ApiError as exc:
+            errors.append(
+                {
+                    "eventId": event["eventId"],
+                    "error": exc.payload["error"],
+                    "detail": exc.payload.get("detail", ""),
+                }
+            )
+        except BarterError as exc:
+            errors.append(
+                {
+                    "eventId": event["eventId"],
+                    "error": exc.code,
+                    "detail": exc.detail,
+                }
+            )
+    return {"valid": not errors, "errors": errors}
+
+
+def verify_batch_events(db: LedgerDb, batch_id: str, rows: list[dict]) -> dict:
+    chains = verify_chains(db, rows)
+    permissions = verify_permissions(db, batch_id, rows)
+    _, _, balances, _ = state_for(db, batch_id)
+    return {
+        "valid": all(chain["valid"] for chain in chains) and permissions["valid"],
+        "eventCount": len(rows),
+        "chains": chains,
+        "permissions": permissions,
+        "balances": balances,
+    }
 
 
 def build_summary(db: LedgerDb, rows: list[dict], include_events: bool) -> dict:
     events = [event_out(row) for row in rows]
-    register = events[0]
-    if register["type"] != "REGISTER":
+    register = next((event for event in events if event["type"] == "REGISTER"), None)
+    if register is None:
         raise ApiError(404, "not_found", "batch not found")
     register_data = register["data"]
+    _, _, balances, _ = state_for(db, register["batchId"])
+    owner = holder_id(rows, balances)
 
-    balances = apply_deltas(
-        compute_balances(events),
-        barter_deltas(derive_offers(load_batches(db))).get(register["batchId"]),
+    gps = [event for event in events if event["type"] == "GPS"]
+    gps.sort(key=lambda event: (event["ts"], event["chainSeq"]))
+    heartbeat_gaps = sum(
+        1
+        for first, second in zip(gps, gps[1:])
+        if second["ts"] - first["ts"] > GPS_GAP_MS
     )
-    last_seq = {register["actorId"]: rows[0]["seq"]}
-    for row, event in zip(rows[1:], events[1:]):
-        if event["type"] == "TRANSFER":
-            last_seq[event["actorId"]] = row["seq"]
-            last_seq[event["data"]["toActorId"]] = row["seq"]
+    mock_count = sum(1 for event in gps if event["data"].get("mock") is True)
+    verification = verify_batch_events(db, register["batchId"], rows)
 
-    owner = max(balances, key=lambda actor: (balances[actor], last_seq.get(actor, 0)))
     summary = {
         "batchId": register["batchId"],
         "crop": register_data["crop"],
@@ -211,19 +339,33 @@ def build_summary(db: LedgerDb, rows: list[dict], include_events: bool) -> dict:
         "initialKg": int(register_data["weightKg"]),
         "balances": balances,
         "ownerId": owner,
-        "tamperCount": sum(1 for row in rows if row["type"] == "TAMPER"),
-        "lastHash": rows[-1]["hash"],
-        "verified": verify_events(db, rows)["valid"],
+        "tamperCount": sum(1 for event in events if event["type"] == "TAMPER"),
+        "eventCount": len(rows),
+        "heartbeatGaps": heartbeat_gaps,
+        "mockCount": mock_count,
+        "chains": db.chains_for_batch(register["batchId"]),
+        "lastHash": rows[-1]["hash"] if rows else "",
+        "verified": verification["valid"],
     }
     if include_events:
-        summary["events"] = events
+        summary["events"] = events[-200:]
     return summary
 
 
+def admin_token() -> str | None:
+    configured = os.environ.get("AGRICHAIN_ADMIN_TOKEN")
+    if configured:
+        return configured
+    if os.environ.get("AGRICHAIN_DEV") == "1":
+        return "dev-admin-token"
+    return None
+
+
 def create_app(db_path: str | None = None) -> FastAPI:
-    app = FastAPI(title="AgriChain Ledger", version="0.1")
+    app = FastAPI(title="AgriChain Ledger", version="2.0")
     db = LedgerDb(db_path or os.environ.get("LEDGER_DB", str(DEFAULT_DB)))
     app.state.db = db
+    rate_hits: dict[str, list[float]] = {}
 
     if db_path is None:
         @app.on_event("startup")
@@ -245,15 +387,163 @@ def create_app(db_path: str | None = None) -> FastAPI:
     async def request_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         return JSONResponse(
             status_code=400,
-            content={"error": "bad_request", "detail": "Invalid request"},
+            content={"error": "bad_request", "detail": "Invalid request", "retry": False},
         )
+
+    def check_rate_limit(request: Request) -> None:
+        try:
+            limit = int(os.environ.get("AGRICHAIN_RATE_LIMIT", "60"))
+        except ValueError:
+            limit = 60
+        if limit <= 0:
+            return
+        ip = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        hits = [hit for hit in rate_hits.get(ip, []) if now - hit < 60]
+        if len(hits) >= limit:
+            raise ApiError(429, "rate_limited", "too many requests", retry=True)
+        hits.append(now)
+        rate_hits[ip] = hits
+
+    def require_admin(request: Request) -> None:
+        expected = admin_token()
+        if expected is None:
+            raise ApiError(
+                401,
+                "admin_disabled",
+                "actor registration is closed; set AGRICHAIN_ADMIN_TOKEN",
+            )
+        if request.headers.get("x-admin-token") != expected:
+            raise ApiError(401, "unauthorized", "missing or invalid admin token")
+
+    def append_one(raw: Any) -> dict:
+        now = int(time.time() * 1000)
+        try:
+            event = validate_event(raw, now)
+        except PriceRemoved as exc:
+            raise ApiError(400, "price_removed", str(exc))
+        except ValidationError as exc:
+            raise ApiError(400, "bad_event", str(exc))
+
+        actor = db.get_actor(event["actorId"])
+        if not actor:
+            raise ApiError(422, "unknown_actor", "actor is not registered")
+
+        canonical = canonical_event(event)
+        if event["hash"] != sha256_hex(canonical):
+            raise ApiError(400, "bad_hash", "hash does not match the canonical event")
+        if not verify_signature(actor["pub_key"], event["sig"], canonical.encode("utf-8")):
+            raise ApiError(400, "bad_sig", "signature does not verify for the actor")
+
+        stream = stream_for(event["type"])
+        existing = db.event_by_id(event["eventId"])
+        if existing:
+            if existing["hash"] != event["hash"]:
+                raise ApiError(
+                    409,
+                    "event_conflict",
+                    "eventId already exists with a different hash",
+                )
+            return {
+                "ok": True,
+                "batchId": event["batchId"],
+                "head": existing["hash"],
+                "seq": existing["seq"],
+                "chain": {
+                    "actorId": existing["actor_id"],
+                    "stream": existing["stream"],
+                    "head": existing["hash"],
+                    "chainSeq": int(existing["chain_seq"]),
+                },
+                "receivedAt": int(existing["received_at"]),
+            }
+
+        head, chain_seq = db.chain_info(event["batchId"], event["actorId"], stream)
+        if event["prevHash"] != head:
+            raise ApiError(
+                409,
+                "prev_mismatch",
+                "event does not extend the current chain head",
+                chain={"actorId": event["actorId"], "stream": stream},
+                head=head,
+                chainSeq=chain_seq,
+            )
+
+        rows = db.events_for_batch(event["batchId"])
+        has_register = any(row["type"] == "REGISTER" for row in rows)
+        if event["type"] == "REGISTER":
+            if has_register:
+                raise ApiError(409, "batch_exists", "batch is already registered")
+        elif not has_register:
+            raise ApiError(409, "batch_unknown", "batch has no REGISTER event")
+
+        if event["type"] == "BIND" and event["data"].get("boxId") is not None:
+            box = db.get_actor(event["data"]["boxId"])
+            if not box or box["role"] != "box":
+                raise ApiError(400, "bad_event", "boxId must be a registered box actor")
+
+        batches, offers, balances, prefix_rows = state_for(db, event["batchId"])
+        try:
+            check_permission(
+                event,
+                actor["role"],
+                prefix_rows,
+                batches,
+                offers,
+                balances,
+                event["ts"],
+            )
+        except BarterError as exc:
+            raise ApiError(exc.status, exc.code, exc.detail, **exc.extra)
+
+        data_json = json.dumps(
+            event["data"],
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        try:
+            seq, new_head, new_chain_seq, received_at = db.append_event(
+                event, data_json, now, stream
+            )
+        except PrevMismatch as exc:
+            raise ApiError(
+                409,
+                "prev_mismatch",
+                "event does not extend the current chain head",
+                chain={"actorId": exc.actor_id, "stream": exc.stream},
+                head=exc.head,
+                chainSeq=exc.chain_seq,
+            )
+        except BatchNotFound:
+            raise ApiError(409, "batch_unknown", "batch has no REGISTER event")
+        except BatchExists:
+            raise ApiError(409, "batch_exists", "batch is already registered")
+        except EventConflict as exc:
+            raise ApiError(409, "event_conflict", str(exc))
+
+        return {
+            "ok": True,
+            "batchId": event["batchId"],
+            "head": new_head,
+            "seq": seq,
+            "chain": {
+                "actorId": event["actorId"],
+                "stream": stream,
+                "head": new_head,
+                "chainSeq": new_chain_seq,
+            },
+            "receivedAt": received_at,
+        }
 
     @app.get("/health")
     def health() -> dict:
         return {"ok": True, "version": 2}
 
     @app.post("/actors", status_code=201)
-    def register_actor(payload: Any = Body(...)) -> dict:
+    def register_actor(request: Request, payload: Any = Body(...)) -> dict:
+        check_rate_limit(request)
+        require_admin(request)
         try:
             actor = validate_actor_registration(payload)
         except ValidationError as exc:
@@ -291,18 +581,20 @@ def create_app(db_path: str | None = None) -> FastAPI:
         }
 
     @app.post("/events", status_code=201)
-    def post_event(payload: Any = Body(...)) -> dict:
-        return append_one(db, payload)
+    def post_event(request: Request, payload: Any = Body(...)) -> dict:
+        check_rate_limit(request)
+        return append_one(payload)
 
     @app.post("/events/bulk")
-    def post_events(payload: Any = Body(...)) -> dict:
+    def post_events(request: Request, payload: Any = Body(...)) -> dict:
+        check_rate_limit(request)
         if not isinstance(payload, dict) or not isinstance(payload.get("events"), list):
             raise ApiError(400, "bad_request", 'body must be {"events":[...]}')
         results = []
         for raw in payload["events"]:
             event_id = raw.get("eventId") if isinstance(raw, dict) else None
             try:
-                result = append_one(db, raw)
+                result = append_one(raw)
                 results.append(
                     {
                         "eventId": event_id,
@@ -310,6 +602,9 @@ def create_app(db_path: str | None = None) -> FastAPI:
                         "status": 201,
                         "seq": result["seq"],
                         "head": result["head"],
+                        "chain": result["chain"],
+                        "receivedAt": result["receivedAt"],
+                        "retry": False,
                     }
                 )
             except ApiError as exc:
@@ -320,6 +615,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
                         "status": exc.status,
                         "error": exc.payload["error"],
                         "detail": exc.payload.get("detail", ""),
+                        "retry": exc.payload.get("retry", False),
                     }
                 )
         return {"results": results}
@@ -329,26 +625,55 @@ def create_app(db_path: str | None = None) -> FastAPI:
         crops = {}
         for batch_id in db.register_batches():
             rows = db.events_for_batch(batch_id)
-            if rows:
-                crops[batch_id] = json.loads(rows[0]["data_json"]).get("crop")
+            register = next((row for row in rows if row["type"] == "REGISTER"), None)
+            if register:
+                crops[batch_id] = json.loads(register["data_json"]).get("crop")
         events = []
         for row in db.recent_events(limit):
             event = event_out(row)
-            event["seq"] = row["seq"]
             event["crop"] = crops.get(event["batchId"])
             events.append(event)
         return {"events": events, "updatedAt": int(time.time() * 1000)}
 
     @app.get("/events")
-    def list_events(batchId: str = Query(...)) -> dict:
+    def list_events(
+        batchId: str = Query(...),
+        actorId: str | None = None,
+        stream: str | None = None,
+        limit: int = Query(default=200, ge=1, le=200),
+        before: int | None = None,
+    ) -> dict:
         rows = db.events_for_batch(batchId)
         if not rows:
             raise ApiError(404, "not_found", "batch not found")
-        return {
+        if actorId:
+            rows = [row for row in rows if row["actor_id"] == actorId]
+        if stream:
+            rows = [row for row in rows if row["stream"] == stream]
+        chain_filter = bool(actorId and stream)
+        if before is not None:
+            if chain_filter:
+                rows = [row for row in rows if row["chain_seq"] < before]
+            else:
+                rows = [row for row in rows if row["seq"] < before]
+        rows.sort(
+            key=lambda row: row["chain_seq"] if chain_filter else row["seq"],
+            reverse=True,
+        )
+        page = rows[:limit]
+        next_before = None
+        if len(rows) > limit:
+            next_before = page[-1]["chain_seq"] if chain_filter else page[-1]["seq"]
+        response = {
             "batchId": batchId,
-            "head": rows[-1]["hash"],
-            "events": [event_out(row) for row in rows],
+            "head": rows[0]["hash"] if rows else "",
+            "events": [event_out(row) for row in page],
         }
+        if chain_filter:
+            response["chain"] = {"actorId": actorId, "stream": stream}
+        if next_before is not None:
+            response["nextBefore"] = next_before
+        return response
 
     @app.get("/trades")
     def list_trades(
@@ -357,10 +682,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     ) -> dict:
         if grade is not None and grade not in {"A", "B", "C"}:
             raise ApiError(400, "bad_grade", "grade must be A, B or C")
-        batches = [
-            [event_out(row) for row in db.events_for_batch(batch_id)]
-            for batch_id in db.register_batches()
-        ]
+        batches = list(load_batches(db).values())
         trades = trades_for_crop(batches, crop)
         selected = [
             trade for trade in trades if grade is None or trade.get("grade") == grade
@@ -406,7 +728,37 @@ def create_app(db_path: str | None = None) -> FastAPI:
         rows = db.events_for_batch(batch_id)
         if not rows:
             raise ApiError(404, "not_found", "batch not found")
-        return verify_events(db, rows)
+        return verify_batch_events(db, batch_id, rows)
+
+    @app.get("/batches/{batch_id}/route")
+    def batch_route(
+        batch_id: str,
+        max_points: int = Query(default=200, alias="max", ge=1, le=1000),
+    ) -> dict:
+        rows = db.events_for_batch(batch_id)
+        if not rows:
+            raise ApiError(404, "not_found", "batch not found")
+        points = []
+        for row in rows:
+            if row["type"] != "GPS":
+                continue
+            event = event_out(row)
+            points.append(
+                {
+                    "ts": event["ts"],
+                    "lat": event["lat"],
+                    "lon": event["lon"],
+                    "accuracyM": event["data"].get("accuracyM"),
+                    "mock": event["data"].get("mock") is True,
+                    "actorId": event["actorId"],
+                    "chainSeq": event["chainSeq"],
+                }
+            )
+        points.sort(key=lambda point: (point["ts"], point["chainSeq"]))
+        truncated = len(points) > max_points
+        if truncated:
+            points = points[-max_points:]
+        return {"batchId": batch_id, "points": points, "truncated": truncated}
 
     @app.get("/batches/{batch_id}")
     def get_batch(batch_id: str) -> dict:
@@ -439,7 +791,6 @@ def create_app(db_path: str | None = None) -> FastAPI:
         recent = []
         for row in db.recent_events(limit):
             event = event_out(row)
-            event["seq"] = row["seq"]
             event["crop"] = crops.get(event["batchId"])
             recent.append(event)
         return {
