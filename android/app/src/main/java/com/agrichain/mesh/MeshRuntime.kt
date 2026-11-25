@@ -81,7 +81,7 @@ class MeshRuntime private constructor(context: Context) {
     }
 
     private fun log(line: String) {
-        Log.i("AgriChainMesh", line)
+        Log.i("AgriChain", "mesh: $line")
         logSink?.invoke(line)
     }
 

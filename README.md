@@ -8,6 +8,7 @@ Buyers scan a batch QR to see the route, tamper flags, price and full history.
 
 Status: `open` / `claimed` / `done` / `blocked`. Claim one task at a time. Read Contracts before coding.
 Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agrichain`. Do not edit files listed under another task.
+Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, auto-detect) is complete in git history and in the Inbox below.
 
 | ID | Task | Status | Claimed by | Branch | Touches (files/folders) | Depends on |
 |----|------|--------|------------|--------|-------------------------|------------|
@@ -25,8 +26,16 @@ Branch: `task-<ID>-<name>`. `APP` below = `android/app/src/main/java/com/agricha
 | T12 | Mesh relay (Nearby Connections) | done | charan | task-T12-charan | APP/mesh/, android/app/build.gradle.kts, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11 |
 | T13 | Demo script + polish | done | charan | task-T13-charan | demo/, README.md | all |
 | T14 | SMS radio leg + relay v2 (replaces T12 scope) | done | charan | task-T14-charan | APP/mesh/, APP/data/, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh,sync}.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T11, T12 |
-| T15 | Laptop ledger runner + web dashboard + USB phone flow | done | charan | task-T15-charan | tools/, ledger/, APP/net/, APP/data/, README.md | T4, T14 |
-| T16 | Auto-detect ledger + unify prices host | done | charan | task-T16-charan | APP/net/, APP/prices/, APP/data/, APP/box/, APP/MainActivity.kt, android/app/src/main/res/layout/, ledger/, tools/, README.md | T15 |
+| T15 | Contract v2: per-actor chains, BIND, permissions, admin token, pagination (docs only) | open | — | — | README.md | — |
+| T16 | Device readiness: permissions, box foreground service, SMS default SIM, scripts/dev.sh | done | charan | task-T16-device-readiness-charan | APP/box/, APP/mesh/, APP/core/Permissions.kt, APP/MainActivity.kt, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{main,box,mesh}.xml, android/app/src/main/res/drawable/, android/app/build.gradle.kts, scripts/dev.sh, README.md | — |
+| T17 | Canonical JSON vectors + on-device parity | open | — | — | contracts/, ledger/tests/, android/app/src/test/, android/app/src/androidTest/ | — |
+| T18 | Remove mandi, add token price (median20) | open | — | — | ledger/prices.py, ledger/app.py, ledger/tests/, APP/prices/, layouts, manifest, demo/seed.py, README.md | — |
+| T19 | Ledger v2: chains, permissions, BIND, admin token, pagination, verify | open | — | — | ledger/ | T15 |
+| T20 | Android v2: per-chain writer, BIND UI, admin token, tamper traceHead, sync planner | open | — | — | APP/core/, APP/box/, APP/data/, APP/batch/, APP/buyer/, APP/ui/, tests | T15, T19 |
+| T21 | SMS hardening: ACK rules, dedupe, binary v3 | open | — | — | APP/mesh/, android/app/src/test/java/com/agrichain/mesh/ | T15 |
+| T22 | Tamper upgrades: movement gating, heartbeat gaps, mock warnings | open | — | — | APP/box/, ledger/, APP/buyer/, tests | T19, T20 |
+| T23 | Anchoring + mirror node | open | — | — | ledger/anchor.py, ledger/mirror.py, ledger/app.py, ledger/tests/, README.md | T19 |
+| T24 | Docs + demo + final device pass | open | — | — | README.md, demo/, scripts/ | all |
 
 ## Contracts
 
@@ -140,6 +149,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-25 12:30] FROM charan → all: claiming T16. Prices kept a private URL store (default `10.0.2.2`) so the T15 USB host never reached that screen. Unify every screen on `LedgerSettings`, add LAN discovery (UDP 8100) plus USB/emulator probing, and auto-save the first healthy ledger. Also stop gating HTTP uploads on validated internet, so `adb reverse` works without Wi-Fi. | open
 - [2026-11-25 13:10] FROM charan → all: T16 done on task-T16-charan. Every screen (prices, sync, buyer, box, mesh, main) now reads and writes `LedgerSettings`, so the USB host reaches prices. On launch and on "Auto-detect ledger" the app probes saved → `127.0.0.1` (adb reverse) → `10.0.2.2` (emulator) → UDP 8100 broadcast, saves the first healthy `/health`, and prices retries once after a failed fetch. `ledger/discovery.py` answers the broadcast with the LAN URL; disable with `AGRICHAIN_DISCOVERY=0`. Upload gating accepts loopback/Wi-Fi so USB needs no validated internet. Tests: 32 ledger (3 new), 57 Android (6 new). | open
 - [2026-11-25 13:05] FROM charan → all: T16 verified on a real USB phone. With an unreachable saved host and `adb reverse tcp:8000 tcp:8000`, the app saved `http://127.0.0.1:8000`; with the reverse removed it saved `http://192.168.31.71:8000` via the UDP broadcast. `curl` from the phone to `/prices?crop=wheat` returned 200 over the cable. UI tap-through remains manual because the test phone was locked. | done
+- [2026-11-25 13:20] FROM charan → all: audit round 2 board added as T15-T24 (old T15/T16 stay complete in history). I am claiming T16 device readiness: permissions per API level, box foreground service, default-SIM SMS, and `scripts/dev.sh`. I will touch only the T16 paths; T15 docs, T17 vectors and T18 token prices are free. | open
+- [2026-11-25 13:45] FROM charan → all: T16 done on task-T16-device-readiness-charan. One permission flow in `APP/core/Permissions.kt` names every denied runtime permission (API 31 Bluetooth, API 33 Nearby Wi-Fi + notifications, SMS, location, camera); the box runs GPS/tamper in a location foreground service with a partial wake lock; SMS sends on the default SMS subscription and logs sent/delivered; every log tag is `AgriChain`; `scripts/dev.sh` holds the adb cheat sheet. Device evidence: `permissions: all 10 granted`; after revoking one, `permissions: denied 1/10: android.permission.NEARBY_WIFI_DEVICES`; box `isForeground=true`, `mWakefulness=Asleep` at start and end, 90 signed GPS events over 2 min; `mesh: nearby: advertising as phone-1a373543`; no AndroidRuntime crash. Actual SMS sent/delivered and 2-phone radio tests remain manual. | done
 
 ## Decisions log
 
@@ -163,6 +174,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-24 charan: SMS uses `AC1|<msgId>|<idx>/<total>|<base64>` with a 140-char payload (≤160-char SMS), 2 s between sends, and a persisted outbox so a dropped chunk is retried on the next broadcast. ACKs go to the inbound `originatingAddress`, not the configured gateway, and are not added to the seen-set (an ACK can arrive before its event).
 - 2026-11-25 charan: T15 serves the dashboard from FastAPI itself (`/`, `/static`), so there is no second server or CDN and the demo works offline. `/stats` and `/events/recent` are read-only additions. USB testing uses `adb reverse tcp:8000 tcp:8000` plus the app's "Use USB" button (`http://127.0.0.1:8000`); Wi-Fi phones keep using the laptop LAN IP.
 - 2026-11-25 charan: T16 makes `LedgerSettings` the only ledger host on Android; `PriceCache` no longer stores a URL. Discovery order is saved → USB loopback → emulator host → UDP broadcast to port 8100 with the token `AGRICHAIN_DISCOVER`; the ledger replies `{"service":"agrichain","baseUrl":"http://<lan-ip>:<port>"}` and the app saves the first URL whose `/health` returns 200. Loopback and Wi-Fi/Ethernet/cellular/VPN count as usable transports for HTTP uploads, because `adb reverse` has no validated internet.
+- 2026-11-25 charan: audit round 2 reuses T15-T24. The pre-audit T15/T16 (laptop runner, auto-detect) remain complete in git history; new work uses suffixed branches such as `task-T16-device-readiness-charan`.
+- 2026-11-25 charan: T16 keeps one runtime permission list in `APP/core/Permissions.kt`; MainActivity requests it and names every denial. The box runs `GpsRecorder` and `TamperDetector` in `BoxService` (foreground type location + partial wake lock) through the shared `BoxEngine`, so closing the activity or turning the screen off does not stop logging. SMS uses the default SMS subscription and `SmsStatusReceiver` logs the carrier sent/delivered result. Every log tag is `AgriChain`. `scripts/dev.sh` is the adb cheat sheet; `--es openBox <uuid> --ez autoStart true` and `--ez openMesh true --ez autoStart true` on MainActivity are dev-only launch hooks.
 
 ## Blockers
 
@@ -195,6 +208,7 @@ Run (updated as tasks land):
 # The app probes saved → 127.0.0.1 (USB) → 10.0.2.2 (emulator) → LAN and keeps the
 # first healthy /health. Prices, sync, buyer and box all share that saved host.
 # adb reverse maps phone 127.0.0.1:8000 to this laptop; Wi-Fi is not needed.
+# adb cheat sheet (install / reverse / logs / grant / ui): ./scripts/dev.sh help
 
 # Ledger tests
 pip install -r ledger/requirements-dev.txt
@@ -208,8 +222,9 @@ cd android && ./gradlew installDebug
 # Launcher → "This is the transport box".
 # 1. Set the ledger URL, tap "Register box online" (POST /actors).
 # 2. Scan the farmer's batch QR, then "Bind" (GET /batches/{id} → lastHash).
-# 3. "Start logging"; each GPS fix is signed and hash-chained locally.
-#    No network is needed after binding; screen stays on while the box screen is open.
+# 3. "Start logging"; each GPS fix is signed and hash-chained locally. Logging runs in a
+#    location foreground service with a partial wake lock, so the screen can go off.
+#    "Stop logging" ends the service.
 
 # Tamper detection (T7)
 # After binding, tap "Arm tamper detection".

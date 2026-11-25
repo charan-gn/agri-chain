@@ -2,7 +2,11 @@ package com.agrichain
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.agrichain.core.Permissions
 import com.agrichain.databinding.ActivityMainBinding
 import com.agrichain.box.BoxActivity
 import com.agrichain.data.SyncActivity
@@ -18,6 +22,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var discovering = false
 
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        reportPermissions()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -29,6 +39,7 @@ class MainActivity : AppCompatActivity() {
         }
         binding.ledgerStatus.text = "Ledger: ${LedgerSettings.baseUrl(this)}"
         binding.findLedgerButton.setOnClickListener { autoDetect(announce = true) }
+        binding.permissionsButton.setOnClickListener { requestPermissions() }
 
         binding.farmerButton.setOnClickListener {
             startActivity(Intent(this, FarmerActivity::class.java))
@@ -48,7 +59,80 @@ class MainActivity : AppCompatActivity() {
         binding.meshButton.setOnClickListener {
             startActivity(Intent(this, MeshActivity::class.java))
         }
+
+        Permissions.logState(this)
+        showPermissionState()
+        if (intent?.getBooleanExtra("checkPermissions", false) == true) {
+            binding.root.post { requestPermissions() }
+        }
         autoDetect(announce = false)
+        handleDevIntent()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDevIntent()
+    }
+
+    /** adb hooks: --es openBox <batchId> or --ez openMesh true, both with --ez autoStart. */
+    private fun handleDevIntent() {
+        val autoStart = intent?.getBooleanExtra("autoStart", false) == true
+        intent?.getStringExtra("openBox")?.let { batchId ->
+            Log.i(Permissions.TAG, "dev: opening box $batchId autoStart=$autoStart")
+            startActivity(
+                Intent(this, BoxActivity::class.java)
+                    .putExtra("batchId", batchId)
+                    .putExtra("autoStart", autoStart)
+            )
+        }
+        if (intent?.getBooleanExtra("openMesh", false) == true) {
+            Log.i(Permissions.TAG, "dev: opening mesh autoStart=$autoStart")
+            startActivity(
+                Intent(this, MeshActivity::class.java)
+                    .putExtra("autoStart", autoStart)
+            )
+        }
+    }
+
+    private fun requestPermissions() {
+        val missing = Permissions.missing(this)
+        if (missing.isEmpty()) {
+            reportPermissions()
+            return
+        }
+        Log.i(
+            Permissions.TAG,
+            "permissions: requesting ${missing.joinToString { it.permission }}",
+        )
+        permissionLauncher.launch(missing.map { it.permission }.toTypedArray())
+    }
+
+    private fun reportPermissions() {
+        val missing = Permissions.missing(this)
+        Permissions.logState(this)
+        showPermissionState()
+        val message = if (missing.isEmpty()) {
+            "All ${Permissions.required().size} permissions are granted."
+        } else {
+            "Denied (enable in App info > Permissions):\n\n" +
+                Permissions.describe(missing) +
+                "\n\nSMS toggles greyed out? Open App info, tap ⋮, then " +
+                "\"Allow restricted settings\", and grant again."
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Permissions")
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun showPermissionState() {
+        val missing = Permissions.missing(this)
+        binding.permissionStatus.text = Permissions.summary(this)
+        binding.permissionStatus.setTextColor(
+            getColor(if (missing.isEmpty()) R.color.status_ok else R.color.status_alert)
+        )
     }
 
     private fun autoDetect(announce: Boolean) {
