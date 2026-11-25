@@ -36,7 +36,7 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T22 | Tamper upgrades: movement gating, heartbeat gaps, mock warnings | open | — | — | APP/box/, ledger/, APP/buyer/, tests | T19, T20 |
 | T23 | Anchoring + mirror node | done | Laasya | task-T23-laasya | ledger/anchor.py, ledger/mirror.py, ledger/app.py, ledger/db.py, ledger/tests/, README.md | T19 |
 | T24 | Docs + demo + final device pass | open | - | - | README.md, demo/, scripts/ | all |
-| T25 | Public web app (dashboard + buyer trace) and Linux/Docker hosting | open | sresta | task-T25-sresta | webapp/, deploy/, README.md | T19 |
+| T25 | Public web app (dashboard + buyer trace) and Linux/Docker hosting | done | sresta | task-T25-sresta | webapp/, deploy/, README.md | T19 |
 
 ## Contracts
 
@@ -249,6 +249,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-25 16:05] FROM Laasya → all: T23 done on task-T23-laasya. `GET /ledger/root` now returns a P-256-signed Merkle root over all event hashes in `seq` order (odd nodes promoted, empty root all zeros); the canonical signed payload is `{height,eventCount,root,ts,nodeId,pubKey}` and the node key persists at `ledger/node_key.pem` (gitignored, override with `AGRICHAIN_NODE_KEY`). `ledger/mirror.py` fetches both roots, verifies both signatures, compares root/height/eventCount and exits 0 match / 1 divergence / 2 fetch-or-signature failure. Tests: 79 ledger pass (5 new). Live two-node check: copied seeded DB, both nodes height 9, root `e734f7e79c858c79…`, mirror exit 0; an empty third node produced `DIVERGENCE root, height, eventCount` and exit 1. | done
 - [2026-11-25 16:30] FROM sresta → all: claiming T25 on task-T25-sresta. A separate public web app on :8080 (FastAPI read-only proxy + dashboard + buyer trace) and Linux/Docker hosting in `deploy/`, complementary to the ledger-served dashboard from T15. No ledger or Android changes; I will update the proxy to the v2 API (`/stats`, `/trades`, `/route`, `/verify`, `/ledger/root`) and keep the USB helpers in `deploy/`. | open
 
+- [2026-11-25 16:55] FROM sresta → all: T25 done on task-T25-sresta. Public app on :8080 proxies read-only v2 GETs and renders the dashboard + buyer trace (median20 token price, signed-root/chain health, tamper, heartbeat gaps, mock fixes, per-chain seq). Hosting: `deploy/serve-linux.sh` health-checks ledger+web and defaults the dev admin token; `deploy/serve.ps1`/`.cmd` on Windows; Compose keeps DB + node key in `/data`. USB: `deploy/usb.sh`/`.ps1`/`.cmd` reverse 8000+8080, grant the runtime permissions and pass `ledgerUrl`. Tests: 5 webapp, 79 ledger; live seed on a temp v2 ledger; dashboard and trace loaded in the browser with no console errors; `serve.ps1` served both services. No phone attached, so install/launch over adb is not device-verified; Docker/WSL is absent here, so the Linux/Compose path is syntax- and YAML-checked only. | done
+
 ## Decisions log
 
 - 2026-11-23 charan: `android/` is one Kotlin app (XML views, single `MainActivity`) with farmer/buyer/box modes; `ledger/` is Python 3 FastAPI + SQLite; `demo/` holds scripts.
@@ -285,6 +287,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-25 Laasya: T19 implements the v2 contract without changing signed bytes. `events` gains `stream`/`chain_seq`/`received_at`; the chain key is `(batch_id, actor_id, stream)` and `chain_seq` starts at 1 per chain. Opening a v1 database migrates rows by assigning `stream` from the event type and numbering each actor's chain, but it does not rewrite old `prevHash` values, so pre-v2 rows stay readable while `/verify` may report a legacy chain as broken. `demo/seed.py` and `tools/ledger.sh` were updated for admin-token registration because the demo must keep working end to end.
 - 2026-11-25 Laasya: T17 puts the parity vectors in `contracts/vectors.json` and makes `canonical_json` the one Python encoder (`canonical_event` delegates to it). Kotlin now emits raw UTF-8 values and standard control escapes instead of rejecting non-ASCII. The AndroidKeyStore instrumented leg is not claimed without a phone.
 - 2026-11-25 Laasya: T23 signs `{height,eventCount,root,ts,nodeId,pubKey}` as canonical JSON with the node's P-256 key. `root` is a Merkle root over `events.hash` in `seq` order (odd nodes are promoted by duplicating the last node; empty is 64 zeros), `height` is the max `seq`, and `nodeId` is the first 16 hex of SHA-256(SPKI). The node key lives at `ledger/node_key.pem` or `AGRICHAIN_NODE_KEY`; it is not committed. `mirror.py` treats a signature failure as exit 2 and a root/height/eventCount mismatch as exit 1.
+- 2026-11-25 sresta: T25 keeps the public app separate from the ledger-served dashboard. `webapp/` is a read-only proxy on :8080 (no admin token, no writes) with a dashboard and buyer trace; `deploy/` starts the ledger and web app natively or in Compose. USB helpers only add `adb reverse` for 8000/8080, so the existing auto-detect flow in the app is unchanged.
 
 ## Blockers
 
@@ -336,6 +339,17 @@ cd ledger && python3 -m pytest -q
 # Android skeleton (T1). JDK 17 + SDK 36 required.
 cd android && ./gradlew installDebug
 # Default ledger URL for emulator: http://10.0.2.2:8000; use the laptop LAN IP on phones.
+
+# Public web app + Linux hosting (T25). Read-only proxy on :8080; the ledger API
+# stays on :8000. Point it elsewhere with LEDGER_URL=http://host:8000.
+./deploy/serve-linux.sh --lan      # Linux/macOS/WSL: ledger + web app
+# Windows: .\deploy\serve.cmd -Lan   (wraps serve.ps1 with -ExecutionPolicy Bypass)
+# Docker:  cd deploy && docker compose up -d --build   (ledger data in a volume)
+# Dashboard: http://localhost:8080/   Buyer trace: /trace?batch=<uuid>
+# USB phone: ./deploy/usb.sh --install  (or .\deploy\usb.cmd -Install) adds
+# adb reverse for 8000 + 8080; the app auto-detects 127.0.0.1:8000.
+# The web app calls read-only GET routes only: /stats, /batches, /batches/{id},
+# /route, /verify, /trades, /barter/offers, /actors/{id}, /ledger/root.
 
 # Transport box (T6)
 # Launcher → "This is the transport box".
