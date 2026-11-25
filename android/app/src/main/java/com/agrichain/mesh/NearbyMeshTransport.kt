@@ -31,14 +31,15 @@ class NearbyMeshTransport(
     private val endpoints = mutableSetOf<String>()
     private val endpointNames = mutableMapOf<String, String>()
     private var running = false
-    private var onEnvelope: ((MeshEnvelope, Transport) -> Unit)? = null
+    private var onEnvelope: ((MeshEnvelope, Transport, String?) -> Unit)? = null
     private var onLog: ((String) -> Unit)? = null
 
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             val bytes = payload.asBytes() ?: return
             val envelope = MeshEnvelope.parse(String(bytes, Charsets.UTF_8)) ?: return
-            onEnvelope?.invoke(envelope, this@NearbyMeshTransport)
+            val peer = synchronized(endpointNames) { endpointNames[endpointId] }
+            onEnvelope?.invoke(envelope, this@NearbyMeshTransport, peer)
         }
 
         override fun onPayloadTransferUpdate(
@@ -83,6 +84,13 @@ class NearbyMeshTransport(
 
     override fun start(
         onReceive: (MeshEnvelope, Transport) -> Unit,
+        onLog: (String) -> Unit,
+    ) {
+        startWithPeer({ envelope, transport, _ -> onReceive(envelope, transport) }, onLog)
+    }
+
+    override fun startWithPeer(
+        onReceive: (MeshEnvelope, Transport, String?) -> Unit,
         onLog: (String) -> Unit,
     ) {
         if (running) return

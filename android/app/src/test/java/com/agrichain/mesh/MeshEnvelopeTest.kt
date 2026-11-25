@@ -6,6 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -149,5 +150,58 @@ class MeshEnvelopeTest {
         val filtered = envelope.onlyEvents { it.type == "REGISTER" }
 
         assertEquals(listOf("REGISTER"), filtered.events.map { it.type })
+    }
+
+    @Test
+    fun `signed chat round trips and verifies`() {
+        val chat = MeshEnvelope.chat("phone-a", "  hello field  ", TestSigners.create("mesh:A"))
+
+        val parsed = MeshEnvelope.parse(chat.encode())
+
+        assertEquals(MeshKind.CHAT, parsed?.kind)
+        assertEquals("hello field", parsed?.chatText)
+        assertTrue(parsed?.verifyChat() == true)
+        assertTrue(parsed?.events?.isEmpty() == true)
+        assertTrue(parsed?.ackedEventIds?.isEmpty() == true)
+    }
+
+    @Test
+    fun `tampered chat does not verify`() {
+        val chat = MeshEnvelope.chat("phone-a", "hello", TestSigners.create("mesh:A"))
+        val json = chat.toJson().put("c", "tampered")
+
+        assertTrue(MeshEnvelope.fromJson(json)?.verifyChat() == false)
+    }
+
+    @Test
+    fun `unsigned chat does not verify`() {
+        val unsigned = MeshEnvelope(
+            kind = MeshKind.CHAT,
+            envelopeId = "chat-1",
+            senderId = "phone-a",
+            sentAt = 1764000000000,
+            ttl = 6,
+            chatText = "plain",
+        )
+
+        assertTrue(MeshEnvelope.parse(unsigned.encode())?.verifyChat() == false)
+    }
+
+    @Test
+    fun `chat text is capped at 500 characters`() {
+        val chat = MeshEnvelope.chat("phone-a", "x".repeat(900), TestSigners.create("mesh:A"))
+
+        assertEquals(MeshEnvelope.MAX_CHAT_CHARS, chat.chatText?.length)
+    }
+
+    @Test
+    fun `chat rejects an empty and an oversized body`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            MeshEnvelope.chat("phone-a", "   ", TestSigners.create("mesh:A"))
+        }
+        val json = MeshEnvelope.chat("phone-a", "hello", TestSigners.create("mesh:A")).toJson()
+            .put("c", "x".repeat(MeshEnvelope.MAX_CHAT_CHARS + 1))
+
+        assertNull(MeshEnvelope.fromJson(json))
     }
 }

@@ -38,7 +38,24 @@ object Permissions {
         }
     }
 
+    /** Minimum set for the BLE chat mesh; SMS, camera and box GPS are not needed. */
+    fun mesh(): List<Need> = buildList {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            add(Need(Manifest.permission.BLUETOOTH_SCAN, "Bluetooth scan (chat mesh)"))
+            add(Need(Manifest.permission.BLUETOOTH_ADVERTISE, "Bluetooth advertise (chat mesh)"))
+            add(Need(Manifest.permission.BLUETOOTH_CONNECT, "Bluetooth connect (chat mesh)"))
+        } else {
+            add(Need(Manifest.permission.ACCESS_FINE_LOCATION, "Location (BLE scan)"))
+            add(Need(Manifest.permission.ACCESS_COARSE_LOCATION, "Approximate location"))
+        }
+    }
+
     fun missing(context: Context): List<Need> = required().filter {
+        ContextCompat.checkSelfPermission(context, it.permission) !=
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    fun missingMesh(context: Context): List<Need> = mesh().filter {
         ContextCompat.checkSelfPermission(context, it.permission) !=
             PackageManager.PERMISSION_GRANTED
     }

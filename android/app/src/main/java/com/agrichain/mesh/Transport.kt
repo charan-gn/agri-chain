@@ -15,6 +15,18 @@ interface Transport {
 
     fun start(onReceive: (MeshEnvelope, Transport) -> Unit, onLog: (String) -> Unit)
 
+    /**
+     * Same as [start], but also reports the link peer that handed over the
+     * envelope. Relayed envelopes keep the origin's sender id, so ACK scoping
+     * must use the link peer, not `envelope.senderId`.
+     */
+    fun startWithPeer(
+        onReceive: (MeshEnvelope, Transport, String?) -> Unit,
+        onLog: (String) -> Unit,
+    ) {
+        start({ envelope, transport -> onReceive(envelope, transport, null) }, onLog)
+    }
+
     fun stop()
 
     /** Returns the number of peers/chunks the envelope was handed to; 0 when unavailable. */
@@ -68,6 +80,8 @@ data class ReceiveResult(
 )
 
 data class PumpResult(val uploaded: Int, val pending: Int, val error: String? = null)
+
+data class ChatSendResult(val envelope: MeshEnvelope, val links: Int)
 
 interface LedgerGateway {
     fun available(): Boolean

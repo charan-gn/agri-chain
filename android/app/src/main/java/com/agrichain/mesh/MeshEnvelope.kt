@@ -14,6 +14,7 @@ import java.util.UUID
 enum class MeshKind(val code: String) {
     EVENTS("E"),
     ACK("A"),
+    CHAT("C"),
 }
 
 /**
@@ -21,9 +22,9 @@ enum class MeshKind(val code: String) {
  * omitted and recomputed by the receiver; the signature is carried unchanged.
  * v1/v2 envelopes still parse so older builds can hand over their queue.
  *
- * ACKs are signed by the acknowledging node (H6). The signed bytes cover
- * `{v,k,id,s,t,ack}` but not `ttl`, so a relay can decrement the TTL without
- * re-signing; envelope-id dedupe stops replay.
+ * ACKs and chat messages are signed by the origin node. The signed bytes cover
+ * `{v,k,id,s,t,ack}` or `{v,k,id,s,t,c}` but not `ttl`, so a relay can decrement
+ * the TTL without re-signing; envelope-id dedupe stops replay.
  */
 data class MeshEnvelope(
     val kind: MeshKind,
@@ -33,6 +34,7 @@ data class MeshEnvelope(
     val ttl: Int,
     val events: List<Event> = emptyList(),
     val ackedEventIds: List<String> = emptyList(),
+    val chatText: String? = null,
     val sig: String? = null,
     val pubKey: String? = null,
 ) {
@@ -55,7 +57,10 @@ data class MeshEnvelope(
             ackedEventIds.forEach { array.put(it) }
             json.put("ack", array)
         }
-        if (kind == MeshKind.ACK) {
+        if (kind == MeshKind.CHAT) {
+            chatText?.let { json.put("c", it) }
+        }
+        if (kind == MeshKind.ACK || kind == MeshKind.CHAT) {
             sig?.let { json.put("sig", it) }
             pubKey?.let { json.put("pk", it) }
         }
@@ -90,9 +95,30 @@ data class MeshEnvelope(
         return EventVerifier.verifyEcdsa(ackBytes(), signature, key)
     }
 
+    /** Bytes signed by the chat sender; `ttl` is intentionally excluded. */
+    fun chatBytes(): ByteArray = CanonicalJson.encode(
+        linkedMapOf<String, Any?>(
+            "v" to VERSION,
+            "k" to MeshKind.CHAT.code,
+            "id" to envelopeId,
+            "s" to senderId,
+            "t" to sentAt,
+            "c" to (chatText ?: ""),
+        )
+    ).toByteArray(StandardCharsets.UTF_8)
+
+    fun verifyChat(): Boolean {
+        if (kind != MeshKind.CHAT) return false
+        if (chatText.isNullOrBlank()) return false
+        val signature = sig ?: return false
+        val key = pubKey ?: return false
+        return EventVerifier.verifyEcdsa(chatBytes(), signature, key)
+    }
+
     companion object {
         const val VERSION = 3
         const val DEFAULT_TTL = 6
+        const val MAX_CHAT_CHARS = 500
         private const val V1_TTL = 6
 
         fun shortId(): String =
@@ -144,6 +170,27 @@ data class MeshEnvelope(
             return unsigned.copy(sig = signature, pubKey = signer.publicKeySpkiBase64)
         }
 
+        /** Signed local chat. Relays forward it; the ledger never sees it. */
+        fun chat(
+            senderId: String,
+            text: String,
+            signer: PublicKeySigner,
+            ttl: Int = DEFAULT_TTL,
+        ): MeshEnvelope {
+            val body = text.trim().take(MAX_CHAT_CHARS)
+            require(body.isNotEmpty()) { "Chat message is empty" }
+            val unsigned = MeshEnvelope(
+                kind = MeshKind.CHAT,
+                envelopeId = shortId(),
+                senderId = senderId,
+                sentAt = System.currentTimeMillis(),
+                ttl = ttl,
+                chatText = body,
+            )
+            val signature = Base64.getEncoder().encodeToString(signer.sign(unsigned.chatBytes()))
+            return unsigned.copy(sig = signature, pubKey = signer.publicKeySpkiBase64)
+        }
+
         fun parse(text: String): MeshEnvelope? =
             runCatching { fromJson(JSONObject(text)) }.getOrNull()
 
@@ -158,6 +205,7 @@ data class MeshEnvelope(
             val kind = when (json.optString("k")) {
                 MeshKind.EVENTS.code -> MeshKind.EVENTS
                 MeshKind.ACK.code -> MeshKind.ACK
+                MeshKind.CHAT.code -> MeshKind.CHAT
                 else -> return null
             }
             val envelopeId = json.optString("id")
@@ -175,10 +223,17 @@ data class MeshEnvelope(
             val acks = json.optJSONArray("ack")?.let { array ->
                 (0 until array.length()).map { index -> array.getString(index) }
             }.orEmpty()
+            val chat = if (kind == MeshKind.CHAT) {
+                json.optString("c").takeIf { it.isNotEmpty() && it.length <= MAX_CHAT_CHARS }
+                    ?: return null
+            } else {
+                null
+            }
 
-            if (events.isEmpty() && acks.isEmpty()) return null
+            if (events.isEmpty() && acks.isEmpty() && chat == null) return null
             if (kind == MeshKind.EVENTS && events.isEmpty()) return null
             if (kind == MeshKind.ACK && acks.isEmpty()) return null
+            if (kind == MeshKind.CHAT && chat == null) return null
             return MeshEnvelope(
                 kind = kind,
                 envelopeId = envelopeId,
@@ -187,6 +242,7 @@ data class MeshEnvelope(
                 ttl = ttl,
                 events = events,
                 ackedEventIds = acks,
+                chatText = chat,
                 sig = json.optString("sig").takeIf { it.isNotEmpty() },
                 pubKey = json.optString("pk").takeIf { it.isNotEmpty() },
             )

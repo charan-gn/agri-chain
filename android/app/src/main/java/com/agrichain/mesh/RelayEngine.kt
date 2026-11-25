@@ -19,6 +19,7 @@ class RelayEngine(
     private val transports: MutableList<Transport> = mutableListOf(),
     private val log: (String) -> Unit = {},
     private val signer: PublicKeySigner? = null,
+    private val chatListener: ((MeshEnvelope) -> Unit)? = null,
 ) {
 
     private val seenEnvelopes = LinkedHashSet<String>()
@@ -40,6 +41,25 @@ class RelayEngine(
         fromPeerId: String? = null,
     ): ReceiveResult {
         if (envelope.senderId == selfId) return ReceiveResult(0, envelope.events.size, false, 0)
+        // Validate signed kinds before remembering the id. Otherwise a forged
+        // copy could burn the id and make the genuine message look like a dup.
+        when (envelope.kind) {
+            MeshKind.CHAT -> {
+                if (fromTransportId != null && fromTransportId !in CHAT_TRANSPORTS) {
+                    log("ignored chat from $fromTransportId: not a local link")
+                    return ReceiveResult(0, 0, false, 0)
+                }
+                if (!envelope.verifyChat()) {
+                    log("ignored chat from ${envelope.senderId.take(12)}: bad or missing signature")
+                    return ReceiveResult(0, 0, false, 0)
+                }
+            }
+            MeshKind.ACK -> if (!envelope.verifyAck()) {
+                log("ignored ACK from ${envelope.senderId.take(12)}: bad or missing signature")
+                return ReceiveResult(0, 0, false, 0)
+            }
+            MeshKind.EVENTS -> Unit
+        }
         if (envelope.envelopeId in seenEnvelopes || store.hasSeenEnvelope(envelope.envelopeId)) {
             return ReceiveResult(0, envelope.events.size, false, 0)
         }
@@ -48,6 +68,7 @@ class RelayEngine(
         return when (envelope.kind) {
             MeshKind.EVENTS -> receiveEvents(envelope, fromTransportId, fromPeerId)
             MeshKind.ACK -> receiveAck(envelope, fromTransportId, fromPeerId)
+            MeshKind.CHAT -> receiveChat(envelope, fromTransportId)
         }
     }
 
@@ -88,10 +109,6 @@ class RelayEngine(
         fromTransportId: String?,
         fromPeerId: String?,
     ): ReceiveResult {
-        if (!envelope.verifyAck()) {
-            log("ignored ACK from ${envelope.senderId.take(12)}: bad or missing signature")
-            return ReceiveResult(0, 0, false, 0)
-        }
         val publicKey = envelope.pubKey.orEmpty()
         val knownKey = store.ackKey(envelope.senderId)
         if (knownKey != null && knownKey != publicKey) {
@@ -122,6 +139,45 @@ class RelayEngine(
         }
         log("ack ${verified.size} event(s) from $peer")
         return ReceiveResult(0, 0, forwarded, 0, verified.size)
+    }
+
+    /**
+     * Chat is mesh-local: signature and TOFU key are checked, the message is
+     * delivered to the UI, and the relay forwards it. It never enters the
+     * ledger outbox and it is never sent over SMS.
+     */
+    private fun receiveChat(envelope: MeshEnvelope, fromTransportId: String?): ReceiveResult {
+        val publicKey = envelope.pubKey.orEmpty()
+        val knownKey = store.ackKey(envelope.senderId)
+        if (knownKey != null && knownKey != publicKey) {
+            log("ignored chat from ${envelope.senderId.take(12)}: signer key changed")
+            return ReceiveResult(0, 0, false, 0)
+        }
+        if (knownKey == null) store.rememberAckKey(envelope.senderId, publicKey)
+
+        chatListener?.invoke(envelope)
+        var forwarded = false
+        if (envelope.ttl > 1) {
+            forwarded = forward(
+                envelope.withTtl(envelope.ttl - 1),
+                allowedTransportIds = CHAT_TRANSPORTS,
+            ) > 0
+        }
+        log("chat from ${envelope.senderId.take(12)}: ${envelope.chatText?.take(40)}")
+        return ReceiveResult(0, 0, forwarded, 0)
+    }
+
+    /** Signs and broadcasts a local chat message. Returns null when no signer is configured. */
+    @Synchronized
+    fun sendChat(text: String): ChatSendResult? {
+        val body = text.trim()
+        if (body.isEmpty() || body.length > MeshEnvelope.MAX_CHAT_CHARS) return null
+        val chatSigner = signer ?: return null
+        val envelope = MeshEnvelope.chat(selfId, body, chatSigner)
+        rememberEnvelope(envelope.envelopeId)
+        val sent = forward(envelope, allowedTransportIds = CHAT_TRANSPORTS)
+        log("chat sent to $sent link(s)")
+        return ChatSendResult(envelope, sent)
     }
 
     /** Uploads everything pending if a ledger is reachable, then broadcasts a signed ACK. */
@@ -171,12 +227,17 @@ class RelayEngine(
         store.markSeenEnvelope(envelopeId)
     }
 
-    private fun forward(envelope: MeshEnvelope, skipTransportId: String? = null): Int {
+    private fun forward(
+        envelope: MeshEnvelope,
+        skipTransportId: String? = null,
+        allowedTransportIds: Set<String>? = null,
+    ): Int {
         val peers = synchronized(transports) { transports.toList() }
         val eventIds = envelope.events.mapTo(mutableSetOf()) { it.eventId }
         var sent = 0
         for (transport in peers) {
             if (transport.id == skipTransportId) continue
+            if (allowedTransportIds != null && transport.id !in allowedTransportIds) continue
             if (!transport.available()) continue
             val count = runCatching { transport.send(envelope) }
                 .onFailure { log("${transport.id} send failed: ${it.message}") }
@@ -192,5 +253,10 @@ class RelayEngine(
             }
         }
         return sent
+    }
+
+    companion object {
+        /** Chat stays on free local links; SMS costs money and LoRa frames are tiny. */
+        private val CHAT_TRANSPORTS = setOf("ble", "nearby")
     }
 }

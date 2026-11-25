@@ -6,6 +6,8 @@ import android.net.Network
 import android.util.Log
 import com.agrichain.core.ActorIdentity
 import com.agrichain.core.Event
+import com.agrichain.data.ChatMessage
+import com.agrichain.data.ChatStore
 import com.agrichain.data.SyncStore
 import java.util.UUID
 
@@ -17,6 +19,7 @@ class MeshRuntime private constructor(context: Context) {
     private val app = context.applicationContext
     private val prefs = app.getSharedPreferences("agrichain_mesh", Context.MODE_PRIVATE)
     private val store = SyncStore(app)
+    private val chatStore = ChatStore(app)
     private val sms = SmsTransport(app)
     private val ledger = HttpLedgerGateway(app)
     private val pasteSmsReassembler = SmsReassembler()
@@ -30,7 +33,10 @@ class MeshRuntime private constructor(context: Context) {
     /** Meshtastic LoRa transport (865-867 MHz IN region). */
     val meshtastic = MeshtasticTransport(app)
 
-    /** Keystore-backed key for signed mesh ACKs (H6); not a ledger actor. */
+    /** Raw BLE GATT mesh (BitChat-style fragmentation and TTL relay). */
+    val ble = BleMeshTransport(app, selfId)
+
+    /** Keystore-backed key for signed mesh ACKs and chat (H6); not a ledger actor. */
     private val ackIdentity = ActorIdentity.loadOrCreate(app, "mesh")
 
     private val engine = RelayEngine(
@@ -40,15 +46,22 @@ class MeshRuntime private constructor(context: Context) {
         mutableListOf(sms),
         { line -> log(line) },
         ackIdentity,
+        { envelope -> recordChat(envelope) },
     )
 
     @Volatile
     var logSink: ((String) -> Unit)? = null
 
+    @Volatile
+    var chatListener: ((ChatMessage) -> Unit)? = null
+
     init {
         sms.start({ _, _ -> }, { line -> log(line) })
-        meshtastic.start(
-            { envelope, via -> onEnvelope(envelope, via.id, peerId = via.id) },
+        meshtastic.startWithPeer(
+            { envelope, via, linkPeer ->
+                val peer = linkPeer ?: via.id
+                onEnvelope(envelope, via.id, peerId = peer)
+            },
             { line -> log("meshtastic: $line") },
         )
         engine.addTransport(meshtastic)
@@ -113,9 +126,9 @@ class MeshRuntime private constructor(context: Context) {
 
     fun register(transport: Transport) {
         engine.addTransport(transport)
-        transport.start(
-            { envelope, via ->
-                val peer = if (via.id == meshtastic.id) via.id else envelope.senderId
+        transport.startWithPeer(
+            { envelope, via, linkPeer ->
+                val peer = linkPeer ?: if (via.id == meshtastic.id) via.id else envelope.senderId
                 onEnvelope(envelope, via.id, peerId = peer)
             },
             { line -> log("${transport.id}: $line") },
@@ -125,6 +138,73 @@ class MeshRuntime private constructor(context: Context) {
     fun unregister(transport: Transport) {
         transport.stop()
         engine.removeTransport(transport)
+    }
+
+    /** Starts raw BLE advertising + scanning. Safe to call more than once. */
+    fun startBleMesh(): Boolean {
+        register(ble)
+        return ble.available()
+    }
+
+    fun stopBleMesh() {
+        unregister(ble)
+    }
+
+    fun bleRunning(): Boolean = ble.available()
+
+    fun blePeerCount(): Int = ble.connectedPeerCount()
+
+    fun smsAvailable(): Boolean = sms.available()
+
+    /** Stores a local chat message and broadcasts it to every ready link. */
+    fun sendChat(text: String): ChatMessage? {
+        val result = engine.sendChat(text) ?: return null
+        val body = result.envelope.chatText ?: return null
+        val message = ChatMessage(
+            envelopeId = result.envelope.envelopeId,
+            senderId = selfId,
+            body = body,
+            ts = result.envelope.sentAt,
+            outgoing = true,
+            status = if (result.links > 0) "sent" else "waiting",
+        )
+        chatStore.add(message)
+        return message
+    }
+
+    fun chatMessages(limit: Int = 200): List<ChatMessage> = chatStore.recent(limit)
+
+    /**
+     * Re-signs and sends chat messages that were written while no BLE peer was
+     * connected. The row keeps its position but adopts the new envelope id, so
+     * relayed copies still dedupe by id.
+     */
+    fun flushChatOutbox(): Int {
+        if (ble.connectedPeerCount() == 0) return 0
+        var sent = 0
+        for (pending in chatStore.outbox()) {
+            val result = engine.sendChat(pending.body) ?: continue
+            if (result.links <= 0) continue
+            if (chatStore.replaceEnvelope(pending.envelopeId, result.envelope.envelopeId, "sent")) {
+                sent++
+            }
+        }
+        if (sent > 0) log("chat outbox flushed: $sent message(s)")
+        return sent
+    }
+
+    private fun recordChat(envelope: MeshEnvelope) {
+        val body = envelope.chatText ?: return
+        val message = ChatMessage(
+            envelopeId = envelope.envelopeId,
+            senderId = envelope.senderId,
+            body = body,
+            ts = envelope.sentAt,
+            outgoing = false,
+            status = "received",
+        )
+        chatStore.add(message)
+        chatListener?.invoke(message)
     }
 
     private fun log(line: String) {

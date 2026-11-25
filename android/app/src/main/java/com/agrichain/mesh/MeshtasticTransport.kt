@@ -36,7 +36,7 @@ class MeshtasticTransport(
         if (stubMode || handler != null) null else Executors.newSingleThreadScheduledExecutor()
     }
 
-    private var onReceive: ((MeshEnvelope, Transport) -> Unit)? = null
+    private var onReceive: ((MeshEnvelope, Transport, String?) -> Unit)? = null
     private var log: ((String) -> Unit)? = null
 
     @Volatile var stubAvailable: Boolean = false
@@ -83,6 +83,13 @@ class MeshtasticTransport(
     fun isInstalled(): Boolean = !stubMode && isMeshtasticInstalled()
 
     override fun start(onReceive: (MeshEnvelope, Transport) -> Unit, onLog: (String) -> Unit) {
+        startWithPeer({ envelope, transport, _ -> onReceive(envelope, transport) }, onLog)
+    }
+
+    override fun startWithPeer(
+        onReceive: (MeshEnvelope, Transport, String?) -> Unit,
+        onLog: (String) -> Unit,
+    ) {
         this.onReceive = onReceive
         this.log = onLog
         if (!stubMode) {
@@ -133,12 +140,12 @@ class MeshtasticTransport(
         if (!MeshtasticCodec.isPart(text)) return
         val envelope = acceptFrame(text) ?: return
         log?.invoke("meshtastic: reassembled envelope ${envelope.envelopeId.take(8)}")
-        onReceive?.invoke(envelope, this)
+        onReceive?.invoke(envelope, this, id)
     }
 
     fun simulateReceive(frame: String): MeshEnvelope? {
         val envelope = acceptFrame(frame) ?: return null
-        onReceive?.invoke(envelope, this)
+        onReceive?.invoke(envelope, this, id)
         return envelope
     }
 
