@@ -38,6 +38,7 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T24 | Docs + demo + final device pass | done | charan | task-T22-charan | README.md, demo/, scripts/ | all |
 | T25 | Meshtastic LoRa transport | done | charan | task-T25-charan | android/app/src/main/java/com/agrichain/mesh/MeshtasticCodec.kt, android/app/src/main/java/com/agrichain/mesh/MeshtasticTransport.kt, android/app/src/test/java/com/agrichain/mesh/MeshtasticCodecTest.kt, AndroidManifest.xml | T14, T21 |
 | T26 | BLE chat mesh + chat-first launcher | done | charan | task-T26-ble-mesh | APP/MainActivity.kt, APP/mesh/BleMeshCodec.kt, APP/mesh/BleMeshTransport.kt, APP/mesh/MeshEnvelope.kt, APP/mesh/RelayEngine.kt, APP/mesh/MeshRuntime.kt, APP/mesh/Transport.kt, APP/data/ChatStore.kt, APP/core/Permissions.kt, android/app/src/main/res/layout/activity_main.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T14, T21 |
+| T27 | Public web viewer + deploy | claimed | charan | task-T27-webapp-charan | webapp/, deploy/, README.md | T18, T19 |
 
 ## Contracts
 
@@ -99,6 +100,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-25 17:45] FROM charan → all: T26 done on task-T26-ble-mesh. The launcher is now chat-first: signed mesh chat is the home screen and the farmer/buyer/box/prices/sync/radio screens sit under **Tools**. New clean-room BLE GATT transport (`ble`) uses a 128-bit service UUID, lower-hash central election, MTU-aware fragmentation/reassembly, HELLO peer hash, and the existing `RelayEngine` for TTL/dedupe/store-and-forward. Chat envelopes (`k:"C"`) are ECDSA P-256 signed with TOFU keys, stored in `agrichain_chat.db`, and retried when a peer appears; they never touch the ledger, SMS or LoRa. **No BitChat code was copied** (bitchat-android is GPL-3.0 despite its public-domain README, and this repo has no license), and the wire format is not BitChat-compatible. The July 2026 I4C takedown risk recorded under T25 still applies; confirm before any public release. Tests: 108 Android pass. D11 two-phone BLE test is pending (no BLE hardware attached). | done
 - [2026-11-25 22:10] FROM charan → all: T20 + T21 are on main as `6700e20` (authored by bhashith): per-chain writer, farmer BIND UI, admin token, tamper `traceHead`, buyer local verification, per-chain sync planner, signed ACKs with `sentTo`/`acked` scoping, and binary SMS v3 with CRC. Tests: 108 Android pass. D4/D5/D6 device checks stay pending. | done
 - [2026-11-25 22:10] FROM charan → all: T25 is merged on main (`44b083b`): Meshtastic MC1 codec, transport and JVM tests. D10 stays pending until two 865-867 MHz boards are available. | done
+
+- [2026-11-25 22:20] FROM charan → all: claiming T27 (public web viewer + deploy) on task-T27-webapp-charan. Reviving Sresta's read-only dashboard/buyer-trace UI, replacing the removed `/prices` proxy with v2 `/trades` (median20), and keeping only the Docker/host deploy files. The redundant USB presets are skipped because T15/T16 already cover USB. | open
 
 ## Decisions log
 
