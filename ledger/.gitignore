@@ -3,3 +3,4 @@
 *.db-shm
 .venv/
 __pycache__/
+node_key.pem
