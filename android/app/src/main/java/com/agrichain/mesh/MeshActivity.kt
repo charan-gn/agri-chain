@@ -62,6 +62,12 @@ class MeshActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        updateTransports()
+        refreshPending()
+    }
+
     override fun onDestroy() {
         if (running) runtime.unregister(nearby)
         runtime.logSink = null
@@ -87,7 +93,11 @@ class MeshActivity : AppCompatActivity() {
         updateTransports()
         Thread {
             val result = runtime.pump()
-            ui { log("startup sync: ${result.uploaded} uploaded, ${result.pending} pending") }
+            ui {
+                log("startup sync: ${result.uploaded} uploaded, ${result.pending} pending")
+                updateTransports()
+                refreshPending()
+            }
         }.start()
     }
 
@@ -133,6 +143,7 @@ class MeshActivity : AppCompatActivity() {
                         (result.error?.let { " · $it" } ?: "")
                 )
                 binding.syncButton.isEnabled = true
+                updateTransports()
                 refreshPending()
             }
         }.start()
@@ -151,15 +162,20 @@ class MeshActivity : AppCompatActivity() {
     }
 
     private fun relayPasted() {
-        val envelope = MeshEnvelope.parse(binding.envelopeInput.text.toString().trim())
-        if (envelope == null) {
-            log("Not a valid v2 or v1 envelope")
-            return
+        val raw = binding.envelopeInput.text.toString().trim()
+        val (status, result) = runtime.acceptManualInput(raw)
+        when {
+            status == "invalid" -> log("Not a valid envelope, AC1| SMS or MC1| LoRa frame")
+            result == null -> {
+                log("Buffered chunk ($status) — paste the remaining parts")
+                binding.envelopeInput.text?.clear()
+            }
+            else -> {
+                log("Received ($status): ${result.freshEvents} new, ${result.uploaded} uploaded")
+                binding.envelopeInput.text?.clear()
+                refreshPending()
+            }
         }
-        val result = runtime.onEnvelope(envelope, "paste")
-        log("Received: ${result.freshEvents} new, ${result.uploaded} uploaded")
-        binding.envelopeInput.text?.clear()
-        refreshPending()
     }
 
     private fun updateTransports() {
@@ -168,11 +184,17 @@ class MeshActivity : AppCompatActivity() {
             Manifest.permission.SEND_SMS,
         ) == PackageManager.PERMISSION_GRANTED &&
             SmsSettings.gatewayNumber(this) != null
+        val loraState = when {
+            runtime.meshtastic.available() -> "● ON"
+            runtime.meshtastic.isInstalled() -> "◐ Ready"
+            else -> "○ Off"
+        }
         val internetOn = runtime.ledgerReachable()
         binding.transports.text =
             "Nearby ${if (running) "● ON" else "○ OFF"}  ·  " +
                 "SMS ${if (smsReady) "● Ready" else "○ Off"}  ·  " +
-                "Internet ${if (internetOn) "● ON" else "○ Off"}"
+                "LoRa $loraState  ·  " +
+                "Net ${if (internetOn) "● ON" else "○ Off"}"
     }
 
     private fun refreshPending() {

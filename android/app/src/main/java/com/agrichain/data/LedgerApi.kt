@@ -14,27 +14,53 @@ class LedgerException(
     val head: String?,
 ) : IOException(if (code.isEmpty()) detail else "$code: $detail")
 
-data class ServerBatch(val head: String, val eventIds: Set<String>)
+data class ServerBatch(
+    val head: String,
+    val eventIds: Set<String>,
+    val chainHeads: Map<Pair<String, String>, String> = emptyMap(),
+)
 
 class LedgerApi(private val baseUrl: String) {
 
-    fun registerActor(actorId: String, name: String, role: String, pubKey: String) {
+    fun registerActor(
+        actorId: String,
+        name: String,
+        role: String,
+        pubKey: String,
+        adminToken: String = "dev-admin-token",
+    ) {
         val body = JSONObject()
             .put("actorId", actorId)
             .put("name", name)
             .put("role", role)
             .put("pubKey", pubKey)
-        request("POST", "/actors", body)
+        request("POST", "/actors", body, adminToken = adminToken)
     }
 
     fun fetchBatch(batchId: String): ServerBatch? {
-        val json = request("GET", "/events?batchId=${encode(batchId)}", null, allowNotFound = true)
+        val json = request("GET", "/batches/${encode(batchId)}", null, allowNotFound = true)
             ?: return null
-        val events = json.optJSONArray("events") ?: return ServerBatch(json.getString("head"), emptySet())
-        val ids = (0 until events.length()).mapTo(mutableSetOf()) { index ->
-            events.getJSONObject(index).getString("eventId")
+        val events = json.optJSONArray("events")
+        val ids = if (events == null) {
+            emptySet()
+        } else {
+            (0 until events.length()).mapTo(mutableSetOf()) { index ->
+                events.getJSONObject(index).getString("eventId")
+            }
         }
-        return ServerBatch(json.getString("head"), ids)
+        val chains = json.optJSONArray("chains")
+        val chainHeads = linkedMapOf<Pair<String, String>, String>()
+        if (chains != null) {
+            for (i in 0 until chains.length()) {
+                val c = chains.getJSONObject(i)
+                chainHeads[c.getString("actorId") to c.getString("stream")] = c.optString("head")
+            }
+        }
+        return ServerBatch(
+            head = json.optString("lastHash"),
+            eventIds = ids,
+            chainHeads = chainHeads,
+        )
     }
 
     fun postEvent(event: Event): String {
@@ -48,6 +74,7 @@ class LedgerApi(private val baseUrl: String) {
         path: String,
         body: JSONObject?,
         allowNotFound: Boolean = false,
+        adminToken: String? = null,
     ): JSONObject? {
         val connection = URL(baseUrl + path).openConnection() as HttpURLConnection
         try {
@@ -55,6 +82,9 @@ class LedgerApi(private val baseUrl: String) {
             connection.connectTimeout = 6_000
             connection.readTimeout = 10_000
             connection.setRequestProperty("Accept", "application/json")
+            if (!adminToken.isNullOrBlank()) {
+                connection.setRequestProperty("X-Admin-Token", adminToken)
+            }
             if (body != null) {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")

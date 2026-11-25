@@ -11,8 +11,7 @@ import com.agrichain.net.LedgerSettings
 import java.io.IOException
 
 /**
- * Internet transport. Uploads whatever is in the outbox to the ledger; the
- * ledger treats a repeated eventId as a success, so retries are safe.
+ * Internet transport. Uploads queued events to the v2 ledger per (actorId, stream) chain.
  */
 class HttpLedgerGateway(context: Context) : LedgerGateway {
 
@@ -21,7 +20,7 @@ class HttpLedgerGateway(context: Context) : LedgerGateway {
     override fun available(): Boolean {
         val base = LedgerSettings.baseUrl(app)
         if (base.startsWith("http://127.0.0.1") || base.startsWith("http://localhost")) {
-            return true // adb reverse works without a validated network
+            return true
         }
         val manager = app.getSystemService(ConnectivityManager::class.java) ?: return false
         val network = manager.activeNetwork ?: return false
@@ -39,38 +38,46 @@ class HttpLedgerGateway(context: Context) : LedgerGateway {
         val rejected = mutableListOf<String>()
         var error: String? = null
 
-        for ((batchId, group) in events.groupBy { it.batchId }) {
-            var server = try {
+        val batchGroups = events.groupBy { it.batchId }.entries.sortedBy { (_, group) ->
+            when {
+                group.any { it.type == "REGISTER" } -> 0
+                group.any { it.type == "BIND" } -> 1
+                else -> 2
+            }
+        }
+
+        for ((batchId, group) in batchGroups) {
+            val server = try {
                 api.fetchBatch(batchId)
             } catch (failure: IOException) {
                 error = failure.message
                 rejected += group.map { it.eventId }
                 continue
             }
-            var head = server?.head.orEmpty()
+            val chainHeads = server?.chainHeads?.toMutableMap() ?: mutableMapOf()
             var ids = server?.eventIds ?: emptySet()
 
             group.filter { it.eventId in ids }.forEach { accepted += it.eventId }
-            for (event in SyncPlanner.order(group, ids, head)) {
+            for (event in SyncPlanner.orderV2(group, ids, chainHeads)) {
                 if (event.eventId in ids) {
                     accepted += event.eventId
                     continue
                 }
-                if (!canAppend(event, head)) {
-                    val refreshed = try {
-                        api.fetchBatch(batchId)
-                    } catch (failure: IOException) {
-                        null
-                    }
+                val chainKey = event.actorId to SyncPlanner.streamFor(event.type)
+                var head = chainHeads[chainKey].orEmpty()
+                if (event.prevHash != head) {
+                    val refreshed = runCatching { api.fetchBatch(batchId) }.getOrNull()
                     if (refreshed != null) {
-                        head = refreshed.head
                         ids = refreshed.eventIds
+                        chainHeads.clear()
+                        chainHeads.putAll(refreshed.chainHeads)
+                        head = chainHeads[chainKey].orEmpty()
                     }
                     if (event.eventId in ids) {
                         accepted += event.eventId
                         continue
                     }
-                    if (!canAppend(event, head)) {
+                    if (event.prevHash != head) {
                         rejected += event.eventId
                         error = "prev_mismatch"
                         continue
@@ -78,16 +85,15 @@ class HttpLedgerGateway(context: Context) : LedgerGateway {
                 }
 
                 try {
-                    head = api.postEvent(event)
+                    val newHead = api.postEvent(event)
+                    chainHeads[chainKey] = newHead
                     ids = ids + event.eventId
                     accepted += event.eventId
                 } catch (failure: LedgerException) {
                     rejected += event.eventId
                     error = "${failure.code}: ${failure.detail}"
-                    if (failure.status == 409 && failure.head != null) head = failure.head
-                    if (failure.status == 422 || failure.status == 400) {
-                        // A bad signature/hash/actor will not fix itself.
-                        continue
+                    if (failure.status == 409 && failure.head != null) {
+                        chainHeads[chainKey] = failure.head
                     }
                 } catch (failure: IOException) {
                     rejected += event.eventId
@@ -97,12 +103,5 @@ class HttpLedgerGateway(context: Context) : LedgerGateway {
             }
         }
         return UploadResult(accepted, rejected, error)
-    }
-
-    private fun canAppend(event: Event, head: String): Boolean {
-        if (head.isEmpty()) {
-            return event.prevHash.isEmpty() && event.type == "REGISTER"
-        }
-        return event.type != "REGISTER" && event.prevHash == head
     }
 }
