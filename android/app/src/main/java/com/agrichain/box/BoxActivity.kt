@@ -4,15 +4,13 @@ import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.pm.PackageManager
-import android.location.Location
 import android.os.Bundle
-import android.view.WindowManager
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.agrichain.core.ActorIdentity
 import com.agrichain.databinding.ActivityBoxBinding
 import com.agrichain.net.LedgerDiscovery
 import com.agrichain.net.LedgerSettings
@@ -23,26 +21,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-import kotlin.math.roundToInt
 
 class BoxActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityBoxBinding
-    private lateinit var session: BoxSession
-    private lateinit var identity: ActorIdentity
-    private lateinit var events: BoxEventLog
-    private lateinit var gps: GpsRecorder
-    private lateinit var tamper: TamperDetector
+    private lateinit var engine: BoxEngine
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
-
-    private var boundBatchId: String? = null
-    private var ledgerHead: String = ""
-    private var logging = false
-    private var tamperArmed = false
-    private var geofenceLat: Double? = null
-    private var geofenceLon: Double? = null
-    private var geofenceRadiusM = TamperRules.DEFAULT_GEOFENCE_RADIUS_M
-    private var geofenceBreached = false
     private var discovering = false
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
@@ -58,7 +42,11 @@ class BoxActivity : AppCompatActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) {
+    ) { grants ->
+        val denied = grants.filterValues { !it }.keys
+        if (denied.isNotEmpty()) {
+            toast("Denied: ${denied.joinToString()}")
+        }
         if (hasLocationPermission()) {
             startLogging()
         } else {
@@ -68,24 +56,20 @@ class BoxActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         binding = ActivityBoxBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        session = BoxSession(this)
-        identity = ActorIdentity.loadOrCreate(this, "box")
-        events = BoxEventLog(this, identity)
-        gps = GpsRecorder(this) { location -> onFix(location) }
-        tamper = TamperDetector(this) { kind, detail -> onTamper(kind, detail) }
+        engine = BoxRuntime.get(this)
+        engine.onChange = { refreshUi() }
+        engine.onMessage = { message -> toast(message) }
 
-        binding.actorId.text = identity.actorId
-        binding.pubKey.text = identity.publicKeySpkiBase64
+        binding.actorId.text = engine.identity.actorId
+        binding.pubKey.text = engine.identity.publicKeySpkiBase64
         binding.ledgerUrlInput.setText(LedgerSettings.baseUrl(this))
-        binding.batchIdInput.setText(session.batchId().orEmpty())
-        session.batchId()?.let { batchId ->
-            boundBatchId = batchId
-            ledgerHead = session.ledgerHead(batchId)
-        }
+        binding.batchIdInput.setText(engine.boundBatchId.orEmpty())
+        binding.bindStatus.text = engine.boundBatchId?.let {
+            "Bound from the saved session."
+        } ?: "Not bound. Scan the batch QR, then bind while online."
 
         binding.scanButton.setOnClickListener { launchScanner() }
         binding.findLedgerButton.setOnClickListener { autoDetect() }
@@ -93,7 +77,7 @@ class BoxActivity : AppCompatActivity() {
         binding.registerActorButton.setOnClickListener { registerActor() }
         binding.copyKeyButton.setOnClickListener { copyPublicKey() }
         binding.toggleButton.setOnClickListener {
-            if (logging) stopLogging() else ensurePermissionAndStart()
+            if (engine.logging) stopLogging() else ensurePermissionAndStart()
         }
         binding.fixNowButton.setOnClickListener { logCurrentFix() }
         binding.tamperToggleButton.setOnClickListener { toggleTamper() }
@@ -101,11 +85,28 @@ class BoxActivity : AppCompatActivity() {
         binding.simulateTamperButton.setOnClickListener { showSimulateTamper() }
 
         refreshUi()
+        handleDevIntent()
+    }
+
+    /** adb hook reached through MainActivity --es openBox <uuid> --ez autoStart true. */
+    private fun handleDevIntent() {
+        val batchId = intent?.getStringExtra("batchId")?.takeIf(::isUuidV4) ?: return
+        val head = intent.getStringExtra("ledgerHead").orEmpty()
+        engine.bind(batchId, head)
+        binding.batchIdInput.setText(batchId)
+        binding.bindStatus.text = "Bound from the adb intent (head=${short(head)})."
+        Log.i(TAG, "box activity: bound from intent batch=$batchId autoStart=" +
+            intent.getBooleanExtra("autoStart", false))
+        if (intent.getBooleanExtra("autoStart", false)) {
+            binding.root.post { ensurePermissionAndStart() }
+        }
     }
 
     override fun onDestroy() {
-        gps.stop()
-        tamper.disarm()
+        engine.onChange = null
+        engine.onMessage = null
+        // The service owns GPS and the sensors; if it is not running, do not leak them.
+        if (!BoxService.running) engine.shutdown()
         super.onDestroy()
     }
 
@@ -122,7 +123,7 @@ class BoxActivity : AppCompatActivity() {
     private fun copyPublicKey() {
         val clipboard = getSystemService(ClipboardManager::class.java)
         clipboard.setPrimaryClip(
-            ClipData.newPlainText("AgriChain box public key", identity.publicKeySpkiBase64)
+            ClipData.newPlainText("AgriChain box public key", engine.identity.publicKeySpkiBase64)
         )
         toast("Public key copied")
     }
@@ -138,10 +139,10 @@ class BoxActivity : AppCompatActivity() {
             val result = runCatching {
                 LedgerClient.registerActor(
                     baseUrl = url,
-                    actorId = identity.actorId,
+                    actorId = engine.identity.actorId,
                     name = "Transport box",
                     role = "box",
-                    pubKey = identity.publicKeySpkiBase64,
+                    pubKey = engine.identity.publicKeySpkiBase64,
                 )
             }
             runOnUiThread {
@@ -215,7 +216,7 @@ class BoxActivity : AppCompatActivity() {
     }
 
     private fun promptOfflineBind(batchId: String, error: Throwable) {
-        if (logging) stopLogging()
+        if (engine.logging) stopLogging()
         val reason = if (error is BatchNotFoundException) {
             "This batch is not on the ledger yet."
         } else {
@@ -228,34 +229,21 @@ class BoxActivity : AppCompatActivity() {
                     "this phone until the queue syncs."
             )
             .setPositiveButton("Bind offline") { _, _ ->
-                bind(batchId, session.ledgerHead(batchId), "offline")
+                bind(batchId, engine.sessionHead(batchId), "offline")
             }
             .setNegativeButton("Cancel") { _, _ -> refreshUi() }
             .show()
     }
 
     private fun bind(batchId: String, head: String, mode: String) {
-        boundBatchId = batchId
-        ledgerHead = head
-        session.bind(batchId, head)
-        if (logging) {
-            gps.stop()
-            logging = false
-        }
-        if (tamperArmed) {
-            tamper.disarm()
-            tamperArmed = false
-        }
-        geofenceLat = null
-        geofenceLon = null
-        geofenceBreached = false
+        engine.bind(batchId, head)
         refreshUi()
         binding.bindStatus.text = "Bound ($mode). Ledger head: ${short(head)}"
         toast("Bound to batch ${batchId.take(8)}…")
     }
 
     private fun ensurePermissionAndStart() {
-        if (boundBatchId == null) {
+        if (engine.boundBatchId == null) {
             toast("Bind a batch first")
             return
         }
@@ -272,22 +260,41 @@ class BoxActivity : AppCompatActivity() {
     }
 
     private fun startLogging() {
-        if (boundBatchId == null) return
-        logging = gps.start()
-        if (!logging) {
-            toast("Enable a location provider (GPS) on this phone")
+        if (engine.boundBatchId == null) return
+        runCatching { BoxService.start(this) }
+            .onFailure { toast("Could not start the box service: ${it.message}") }
+        binding.toggleButton.postDelayed({ refreshUi() }, 400)
+    }
+
+    private fun stopLogging() {
+        engine.stopGps()
+        BoxService.stop(this)
+        refreshUi()
+    }
+
+    private fun toggleTamper() {
+        if (engine.tamperArmed) {
+            engine.disarmTamper()
+            return
+        }
+        if (engine.boundBatchId == null) {
+            toast("Bind a batch first")
+            return
+        }
+        if (!hasLocationPermission()) {
+            toast("Location permission is required to run the box service")
+            return
+        }
+        engine.armTamper()
+        if (!BoxService.running) {
+            runCatching { BoxService.start(this) }
+                .onFailure { toast("Could not start the box service: ${it.message}") }
         }
         refreshUi()
     }
 
-    private fun stopLogging() {
-        gps.stop()
-        logging = false
-        refreshUi()
-    }
-
     private fun logCurrentFix() {
-        if (boundBatchId == null) {
+        if (engine.boundBatchId == null) {
             toast("Bind a batch first")
             return
         }
@@ -300,54 +307,11 @@ class BoxActivity : AppCompatActivity() {
             )
             return
         }
-        val fix = gps.lastKnown()
-        if (fix == null) {
-            toast("No location fix yet — set a location or move near a window")
-        } else {
-            onFix(fix)
-        }
-    }
-
-    private fun onFix(location: Location) {
-        val batchId = boundBatchId ?: return
-        val accuracy = if (location.hasAccuracy()) {
-            location.accuracy.roundToInt().coerceAtLeast(0)
-        } else {
-            0
-        }
-        runCatching {
-            events.appendGps(
-                batchId = batchId,
-                latitude = location.latitude,
-                longitude = location.longitude,
-                accuracyM = accuracy,
-                baseHead = ledgerHead,
-            )
-        }.onSuccess {
-            checkGeofence(location)
-            refreshUi()
-        }.onFailure {
-            toast("Could not sign GPS event: ${it.message}")
-        }
-    }
-
-    private fun toggleTamper() {
-        if (boundBatchId == null) {
-            toast("Bind a batch first")
-            return
-        }
-        if (tamperArmed) {
-            tamper.disarm()
-            tamperArmed = false
-        } else {
-            tamper.arm()
-            tamperArmed = true
-        }
-        refreshUi()
+        engine.logCurrentFix()
     }
 
     private fun setGeofenceHere() {
-        if (boundBatchId == null) {
+        if (engine.boundBatchId == null) {
             toast("Bind a batch first")
             return
         }
@@ -355,79 +319,31 @@ class BoxActivity : AppCompatActivity() {
             toast("Location permission is required for the geofence")
             return
         }
-        val fix = gps.lastKnown()
-        if (fix == null) {
-            toast("No location fix yet — set a location or move near a window")
-            return
-        }
-        geofenceLat = fix.latitude
-        geofenceLon = fix.longitude
-        geofenceRadiusM = TamperRules.DEFAULT_GEOFENCE_RADIUS_M
-        geofenceBreached = false
-        refreshUi()
-        toast("Geofence set: ${geofenceRadiusM.toInt()} m around this fix")
+        engine.setGeofenceHere()
     }
 
     private fun showSimulateTamper() {
-        if (boundBatchId == null) {
+        if (engine.boundBatchId == null) {
             toast("Bind a batch first")
             return
         }
         val kinds = arrayOf("movement", "light", "proximity", "geofence")
         AlertDialog.Builder(this)
             .setTitle("Simulate tamper")
-            .setItems(kinds) { _, which -> onTamper(kinds[which], "demo trigger") }
+            .setItems(kinds) { _, which -> engine.simulateTamper(kinds[which]) }
             .show()
     }
 
-    private fun onTamper(kind: String, detail: String) {
-        val batchId = boundBatchId ?: run {
-            toast("Bind a batch first")
-            return
-        }
-        runCatching {
-            events.appendTamper(batchId, kind, detail, ledgerHead)
-        }.onSuccess {
-            refreshUi()
-            toast("TAMPER logged: $kind")
-        }.onFailure {
-            toast("Could not sign tamper event: ${it.message}")
-        }
-    }
-
-    private fun checkGeofence(location: Location) {
-        if (!tamperArmed) return
-        val anchorLat = geofenceLat ?: return
-        val anchorLon = geofenceLon ?: return
-        val distance = TamperRules.distanceMeters(
-            anchorLat,
-            anchorLon,
-            location.latitude,
-            location.longitude,
-        )
-        if (distance > geofenceRadiusM) {
-            if (!geofenceBreached) {
-                geofenceBreached = true
-                onTamper(
-                    "geofence",
-                    "${distance.toInt()} m outside ${geofenceRadiusM.toInt()} m fence",
-                )
-            }
-        } else {
-            geofenceBreached = false
-        }
-    }
-
     private fun refreshUi() {
-        val batchId = boundBatchId
+        val batchId = engine.boundBatchId
         binding.toggleButton.isEnabled = batchId != null
         binding.fixNowButton.isEnabled = batchId != null
-        binding.toggleButton.text = if (logging) "Stop logging" else "Start logging"
+        binding.toggleButton.text = if (engine.logging) "Stop logging" else "Start logging"
         binding.tamperToggleButton.isEnabled = batchId != null
         binding.setGeofenceButton.isEnabled = batchId != null
         binding.simulateTamperButton.isEnabled = batchId != null
         binding.tamperToggleButton.text =
-            if (tamperArmed) "Disarm tamper detection" else "Arm tamper detection"
+            if (engine.tamperArmed) "Disarm tamper detection" else "Arm tamper detection"
 
         if (batchId == null) {
             binding.bindStatus.text = "Not bound. Scan the batch QR, then bind while online."
@@ -438,15 +354,15 @@ class BoxActivity : AppCompatActivity() {
             return
         }
 
-        val localHead = events.head(batchId, ledgerHead)
-        val batchEvents = events.events(batchId)
+        val localHead = engine.events.head(batchId, engine.ledgerHead)
+        val batchEvents = engine.events.events(batchId)
         val gpsEvents = batchEvents.filter { it.type == "GPS" }
         val tamperEvents = batchEvents.filter { it.type == "TAMPER" }
         val lastGps = gpsEvents.lastOrNull()
 
         binding.bindStatus.text = "Bound: $batchId"
         binding.chainStatus.text =
-            "ledger head: ${short(ledgerHead)}\nlocal head:  ${short(localHead)}"
+            "ledger head: ${short(engine.ledgerHead)}\nlocal head:  ${short(localHead)}"
         binding.fixStatus.text = if (lastGps == null) {
             "No GPS fixes yet."
         } else {
@@ -454,13 +370,13 @@ class BoxActivity : AppCompatActivity() {
                 "(±${lastGps.data["accuracyM"]} m)"
         }
 
-        val fenceLat = geofenceLat
-        val fenceLon = geofenceLon
+        val fenceLat = engine.geofenceLat
+        val fenceLon = engine.geofenceLon
         binding.tamperStatus.text = buildString {
-            append("Sensors: ${tamper.sensorSummary()}")
-            append(if (tamperArmed) " · armed" else " · disarmed")
+            append("Sensors: ${engine.sensorSummary()}")
+            append(if (engine.tamperArmed) " · armed" else " · disarmed")
             if (fenceLat != null && fenceLon != null) {
-                append("\nGeofence: ${geofenceRadiusM.toInt()} m around ")
+                append("\nGeofence: ${engine.geofenceRadiusM.toInt()} m around ")
                 append(GpsEvents.format(fenceLat))
                 append(", ")
                 append(GpsEvents.format(fenceLon))
@@ -504,6 +420,7 @@ class BoxActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "AgriChain"
         private val UUID_V4 = Regex(
             "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
         )

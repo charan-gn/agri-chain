@@ -1,14 +1,18 @@
 package com.agrichain.mesh
 
 import android.Manifest
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.telephony.SmsManager
+import android.telephony.SubscriptionManager
 import androidx.core.content.ContextCompat
 import java.util.ArrayDeque
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * GSM radio leg. Text SMS only; events are base64-chunked, queued and drained at
@@ -25,6 +29,7 @@ class SmsTransport(
     private val queue = ArrayDeque<Pair<String, String>>()
     private var draining = false
     private var log: ((String) -> Unit)? = null
+    private val messageIds = AtomicInteger(1_000)
 
     /** Number the last inbound SMS came from; ACKs go back there, not to ourselves. */
     @Volatile
@@ -91,15 +96,52 @@ class SmsTransport(
                 queue.pollFirst().also { if (it == null) draining = false }
             }
             if (next == null) return
+            val messageId = messageIds.incrementAndGet()
             try {
-                val manager = context.getSystemService(SmsManager::class.java)
-                manager.sendTextMessage(next.first, null, next.second, null, null)
-                log?.invoke("sms -> ${next.first.takeLast(4)} (${next.second.length} chars)")
+                val manager = defaultSubscriptionManager()
+                manager.sendTextMessage(
+                    next.first,
+                    null,
+                    next.second,
+                    statusIntent(SmsStatusReceiver.ACTION_SENT, messageId, next.first),
+                    statusIntent(SmsStatusReceiver.ACTION_DELIVERED, messageId, next.first),
+                )
+                log?.invoke(
+                    "sms -> ${next.first.takeLast(4)} (${next.second.length} chars, " +
+                        "id $messageId)"
+                )
             } catch (error: Exception) {
                 log?.invoke("sms failed: ${error.message}")
             }
             handler.postDelayed(this, INTERVAL_MS)
         }
+    }
+
+    /** Default SMS subscription, so a dual-SIM phone sends on the SIM chosen in Settings. */
+    private fun defaultSubscriptionManager(): SmsManager {
+        val subId = runCatching { SubscriptionManager.getDefaultSmsSubscriptionId() }
+            .getOrDefault(SubscriptionManager.INVALID_SUBSCRIPTION_ID)
+        if (subId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+            runCatching { SmsManager.getSmsManagerForSubscriptionId(subId) }
+                .onFailure { log?.invoke("sms: default sub $subId unavailable: ${it.message}") }
+                .getOrNull()
+                ?.let { return it }
+        }
+        @Suppress("DEPRECATION")
+        return SmsManager.getDefault()
+    }
+
+    private fun statusIntent(action: String, messageId: Int, destination: String): PendingIntent {
+        val intent = Intent(context, SmsStatusReceiver::class.java)
+            .setAction(action)
+            .putExtra(SmsStatusReceiver.EXTRA_DESTINATION, destination)
+            .putExtra(SmsStatusReceiver.EXTRA_MESSAGE_ID, messageId)
+        return PendingIntent.getBroadcast(
+            context,
+            messageId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     companion object {

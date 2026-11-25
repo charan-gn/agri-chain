@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -23,7 +24,11 @@ class MeshActivity : AppCompatActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
         val denied = grants.filterValues { !it }.keys
-        if (denied.isNotEmpty()) log("Denied: ${denied.joinToString()}")
+        if (denied.isNotEmpty()) {
+            log("Denied: ${denied.joinToString()}")
+            Log.w(TAG, "mesh: permissions denied ${denied.joinToString()}")
+            return@registerForActivityResult
+        }
         startMesh()
     }
 
@@ -48,6 +53,9 @@ class MeshActivity : AppCompatActivity() {
         binding.stopButton.isEnabled = false
         updateTransports()
         refreshPending()
+        if (intent?.getBooleanExtra("autoStart", false) == true) {
+            binding.root.post { ensurePermissions() }
+        }
     }
 
     override fun onDestroy() {
@@ -67,6 +75,7 @@ class MeshActivity : AppCompatActivity() {
         if (running) return
         runtime.register(nearby)
         running = true
+        Log.i(TAG, "mesh: starting Nearby advertising and discovery as ${runtime.selfId}")
         binding.startButton.isEnabled = false
         binding.stopButton.isEnabled = true
         binding.status.text = "Mesh running as ${runtime.selfId}"
@@ -82,6 +91,7 @@ class MeshActivity : AppCompatActivity() {
         if (!running) return
         runtime.unregister(nearby)
         running = false
+        Log.i(TAG, "mesh: stopped")
         binding.startButton.isEnabled = true
         binding.stopButton.isEnabled = false
         binding.status.text = "Mesh stopped"
@@ -191,5 +201,9 @@ class MeshActivity : AppCompatActivity() {
         runOnUiThread {
             if (!isFinishing && !isDestroyed) block()
         }
+    }
+
+    companion object {
+        private const val TAG = "AgriChain"
     }
 }
