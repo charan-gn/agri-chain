@@ -35,7 +35,8 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T21 | SMS hardening: ACK rules, dedupe, binary v3 | open | — | — | APP/mesh/, android/app/src/test/java/com/agrichain/mesh/ | T15 |
 | T22 | Tamper upgrades: movement gating, heartbeat gaps, mock warnings | open | — | — | APP/box/, ledger/, APP/buyer/, tests | T19, T20 |
 | T23 | Anchoring + mirror node | done | Laasya | task-T23-laasya | ledger/anchor.py, ledger/mirror.py, ledger/app.py, ledger/db.py, ledger/tests/, README.md | T19 |
-| T24 | Docs + demo + final device pass | open | — | — | README.md, demo/, scripts/ | all |
+| T24 | Docs + demo + final device pass | open | - | - | README.md, demo/, scripts/ | all |
+| T25 | Public web app (dashboard + buyer trace) and Linux/Docker hosting | open | sresta | task-T25-sresta | webapp/, deploy/, README.md | T19 |
 
 ## Contracts
 
@@ -246,6 +247,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-25 15:35] FROM Laasya → all: T17 done on task-T17-laasya. `contracts/vectors.json` has 14 event-shaped vectors covering Telugu, Hindi, emoji, `/`, `<>`, quotes, backslash, control escapes and int64 bounds; Python `crypto.canonical_json` and Kotlin `CanonicalJson` both emit sorted-key raw UTF-8 and reject floats/non-ASCII keys/unpaired surrogates. Python reads the vectors in `ledger/tests/test_vectors.py`; Kotlin reads the same file from the test classpath in `CanonicalVectorsTest`. Tests: 74 ledger, 62 Android, 0 failures. The AndroidKeyStore instrumented parity leg remains a pending device item (no phone); the JVM/Python byte parity is verified. | done
 - [2026-11-25 15:45] FROM Laasya → all: T17 merged to main (`6ccff0d`). Claiming T23 on task-T23-laasya: add `ledger/anchor.py` (persistent node P-256 key, Merkle root over event hashes, signed `GET /ledger/root`) and `ledger/mirror.py` (fetch two roots, verify signatures, exit non-zero on divergence). No contract shape change; `height`/`eventCount`/`root`/`ts`/`nodeId`/`pubKey`/`sig` stay as documented. | open
 - [2026-11-25 16:05] FROM Laasya → all: T23 done on task-T23-laasya. `GET /ledger/root` now returns a P-256-signed Merkle root over all event hashes in `seq` order (odd nodes promoted, empty root all zeros); the canonical signed payload is `{height,eventCount,root,ts,nodeId,pubKey}` and the node key persists at `ledger/node_key.pem` (gitignored, override with `AGRICHAIN_NODE_KEY`). `ledger/mirror.py` fetches both roots, verifies both signatures, compares root/height/eventCount and exits 0 match / 1 divergence / 2 fetch-or-signature failure. Tests: 79 ledger pass (5 new). Live two-node check: copied seeded DB, both nodes height 9, root `e734f7e79c858c79…`, mirror exit 0; an empty third node produced `DIVERGENCE root, height, eventCount` and exit 1. | done
+- [2026-11-25 16:30] FROM sresta → all: claiming T25 on task-T25-sresta. A separate public web app on :8080 (FastAPI read-only proxy + dashboard + buyer trace) and Linux/Docker hosting in `deploy/`, complementary to the ledger-served dashboard from T15. No ledger or Android changes; I will update the proxy to the v2 API (`/stats`, `/trades`, `/route`, `/verify`, `/ledger/root`) and keep the USB helpers in `deploy/`. | open
 
 ## Decisions log
 
