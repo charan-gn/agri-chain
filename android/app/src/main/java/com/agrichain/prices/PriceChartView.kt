@@ -45,10 +45,10 @@ class PriceChartView @JvmOverloads constructor(
     }
     private val track = RectF()
 
-    fun setPrices(points: List<PricePoint>) {
-        bars = PriceBars.build(points)
+    fun setTrades(trades: List<Trade>) {
+        bars = PriceBars.build(trades)
         contentDescription = if (bars.isEmpty()) {
-            "No mandi prices cached"
+            "No priced transfers cached"
         } else {
             bars.joinToString(", ") { "${it.label} ${PriceFormat.perKg(it.pricePerKgPaise)}" }
         }
@@ -73,7 +73,7 @@ class PriceChartView @JvmOverloads constructor(
 
         if (bars.isEmpty()) {
             val centerY = height / 2f - (emptyPaint.descent() + emptyPaint.ascent()) / 2f
-            canvas.drawText("No prices cached yet.", width / 2f, centerY, emptyPaint)
+            canvas.drawText("No priced transfers yet.", width / 2f, centerY, emptyPaint)
             return
         }
 

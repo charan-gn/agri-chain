@@ -14,7 +14,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from crypto import (
-    MARKET_BATCH,
     canonical_event,
     sha256_hex,
     validate_public_key,
@@ -30,9 +29,8 @@ from barter import (
     offer_public,
     validate_barter_event,
 )
-from prices import router as prices_router
-from tokens import compute_balances, trades_for_crop, weighted_price
-from validation import ValidationError, validate_actor_registration, validate_event
+from tokens import compute_balances, median20_price, price_summary, trades_for_crop
+from validation import PriceRemoved, ValidationError, validate_actor_registration, validate_event
 
 DEFAULT_DB = Path(__file__).resolve().parent / "ledger.db"
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -84,6 +82,8 @@ def load_batches(db: LedgerDb) -> dict[str, list[dict]]:
 def append_one(db: LedgerDb, raw: Any) -> dict:
     try:
         event = validate_event(raw)
+    except PriceRemoved as exc:
+        raise ApiError(400, "price_removed", str(exc))
     except ValidationError as exc:
         raise ApiError(400, "bad_event", str(exc))
 
@@ -250,7 +250,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     @app.get("/health")
     def health() -> dict:
-        return {"ok": True}
+        return {"ok": True, "version": 2}
 
     @app.post("/actors", status_code=201)
     def register_actor(payload: Any = Body(...)) -> dict:
@@ -351,17 +351,30 @@ def create_app(db_path: str | None = None) -> FastAPI:
         }
 
     @app.get("/trades")
-    def list_trades(crop: str = Query(...)) -> dict:
+    def list_trades(
+        crop: str = Query(...),
+        grade: str | None = Query(default=None),
+    ) -> dict:
+        if grade is not None and grade not in {"A", "B", "C"}:
+            raise ApiError(400, "bad_grade", "grade must be A, B or C")
         batches = [
             [event_out(row) for row in db.events_for_batch(batch_id)]
             for batch_id in db.register_batches()
         ]
         trades = trades_for_crop(batches, crop)
+        selected = [
+            trade for trade in trades if grade is None or trade.get("grade") == grade
+        ]
+        summary = price_summary(trades)
         return {
             "crop": crop,
+            "grade": grade,
+            "method": "median20",
+            "sampleSize": min(len(selected), 20),
+            "pricePerKgPaise": median20_price(selected),
+            "byGrade": summary["byGrade"],
             "updatedAt": int(time.time() * 1000),
-            "pricePerKgPaise": weighted_price(trades),
-            "trades": trades,
+            "trades": selected,
         }
 
     @app.get("/barter/offers")
@@ -390,8 +403,6 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     @app.get("/batches/{batch_id}/verify")
     def verify_batch(batch_id: str) -> dict:
-        if batch_id == MARKET_BATCH:
-            raise ApiError(404, "not_found", "batch not found")
         rows = db.events_for_batch(batch_id)
         if not rows:
             raise ApiError(404, "not_found", "batch not found")
@@ -399,8 +410,6 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     @app.get("/batches/{batch_id}")
     def get_batch(batch_id: str) -> dict:
-        if batch_id == MARKET_BATCH:
-            raise ApiError(404, "not_found", "batch not found")
         rows = db.events_for_batch(batch_id)
         if not rows:
             raise ApiError(404, "not_found", "batch not found")
@@ -449,7 +458,6 @@ def create_app(db_path: str | None = None) -> FastAPI:
         return FileResponse(WEB_DIR / "index.html")
 
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
-    app.include_router(prices_router)
     return app
 
 

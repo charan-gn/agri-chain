@@ -13,14 +13,14 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Mandi prices"
+            android:text="Token price"
             android:textAppearance="?attr/textAppearanceHeadlineMedium" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Cached rates stay available offline; refresh pulls the latest ledger snapshot."
+            android:text="Median of the last 20 priced transfers; self-trades are ignored. Cached rates stay available offline."
             android:textAppearance="?attr/textAppearanceBodySmall" />
 
         <EditText
@@ -38,25 +38,11 @@
             android:layout_height="wrap_content"
             android:text="Auto-detect ledger (USB / Wi-Fi)" />
 
-        <LinearLayout
+        <Spinner
+            android:id="@+id/cropSpinner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal">
-
-            <Spinner
-                android:id="@+id/cropSpinner"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1" />
-
-            <Spinner
-                android:id="@+id/marketSpinner"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1" />
-        </LinearLayout>
+            android:layout_marginTop="8dp" />
 
         <TextView
             android:id="@+id/statusText"
@@ -84,7 +70,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Refresh prices" />
+            android:text="Refresh price" />
 
     </LinearLayout>
 </ScrollView>

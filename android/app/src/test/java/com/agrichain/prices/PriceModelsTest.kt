@@ -1,17 +1,21 @@
 package com.agrichain.prices
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PriceModelsTest {
 
-    private fun point(market: String, paise: Int) = PricePoint(
-        crop = "wheat",
-        market = market,
+    private fun trade(ts: Long, tokens: Int, paise: Int, grade: String = "A") = Trade(
+        eventId = "event-$ts",
+        batchId = "batch-1",
+        ts = ts,
+        tokens = tokens,
         pricePerKgPaise = paise,
-        source = "demo-mandi",
-        ts = 1764000000000,
+        grade = grade,
+        fromActorId = "farmer:aaaaaaaa-1111",
+        toActorId = "buyer:bbbbbbbb-2222",
     )
 
     @Test
@@ -23,24 +27,94 @@ class PriceModelsTest {
     }
 
     @Test
-    fun `bars are sorted by price and scaled to the maximum`() {
+    fun `bars follow trade order and scale to the maximum`() {
         val bars = PriceBars.build(
             listOf(
-                point("khammam", 2380),
-                point("warangal", 2450),
-                point("nizamabad", 2510),
+                trade(1764000000000, 10, 2380),
+                trade(1764000060000, 5, 2450),
+                trade(1764000120000, 2, 2510),
             )
         )
 
-        assertEquals(listOf("nizamabad", "warangal", "khammam"), bars.map { it.label })
-        assertEquals(1f, bars[0].fraction, 0.0001f)
-        assertEquals(2450f / 2510f, bars[1].fraction, 0.0001f)
-        assertEquals("demo-mandi", bars[0].source)
+        assertEquals(listOf(2380, 2450, 2510), bars.map { it.pricePerKgPaise })
+        assertEquals(2380f / 2510f, bars[0].fraction, 0.0001f)
+        assertEquals(1f, bars[2].fraction, 0.0001f)
+        assertEquals("5 kg · grade A", bars[1].source)
+    }
+
+    @Test
+    fun `bars keep only the last twenty trades`() {
+        val trades = (1..25).map { index ->
+            trade(1764000000000 + index * 1000L, index, 2000 + index)
+        }
+
+        val bars = PriceBars.build(trades)
+        assertEquals(20, bars.size)
+        assertEquals(2006, bars.first().pricePerKgPaise)
+        assertEquals(2025, bars.last().pricePerKgPaise)
     }
 
     @Test
     fun `empty bars stay empty`() {
         assertTrue(PriceBars.build(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun `parses median20 response with grades and null price`() {
+        val body = """
+            {
+              "crop": "wheat",
+              "grade": null,
+              "method": "median20",
+              "sampleSize": 2,
+              "pricePerKgPaise": 2500,
+              "byGrade": {"A": 2500, "B": null, "C": null},
+              "updatedAt": 1764000000000,
+              "trades": [
+                {
+                  "batchId": "b1",
+                  "eventId": "e1",
+                  "ts": 1764000001000,
+                  "tokens": 10,
+                  "pricePerKgPaise": 2000,
+                  "grade": "A",
+                  "fromActorId": "farmer:1",
+                  "toActorId": "buyer:2"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val snapshot = TradePriceJson.parse(body)
+        assertEquals("median20", snapshot.method)
+        assertEquals(2500, snapshot.pricePerKgPaise)
+        assertNull(snapshot.grade)
+        assertEquals(2500, snapshot.byGrade["A"])
+        assertNull(snapshot.byGrade["B"])
+        assertEquals(1, snapshot.trades.size)
+        assertEquals("e1", snapshot.trades[0].eventId)
+        assertEquals(10, snapshot.trades[0].tokens)
+        assertEquals("farmer:1", snapshot.trades[0].fromActorId)
+    }
+
+    @Test
+    fun `cache round trip keeps nulls`() {
+        val snapshot = TradePriceSnapshot(
+            crop = "wheat",
+            grade = null,
+            method = "median20",
+            sampleSize = 0,
+            pricePerKgPaise = null,
+            byGrade = mapOf("A" to null),
+            updatedAt = 1764000000000,
+            trades = emptyList(),
+        )
+
+        val parsed = TradePriceJson.parse(TradePriceJson.encode(snapshot))
+        assertEquals("wheat", parsed.crop)
+        assertNull(parsed.pricePerKgPaise)
+        assertNull(parsed.byGrade["A"])
+        assertTrue(parsed.trades.isEmpty())
     }
 
     @Test
@@ -58,18 +132,9 @@ class PriceModelsTest {
             PriceUrls.normalizeBaseUrl("   "),
         )
         assertEquals(
-            "http://host:8000/prices",
-            PriceUrls.listUrl("http://host:8000/", null, null),
+            "http://host:8000/trades?crop=wheat",
+            PriceUrls.tradesUrl("http://host:8000/", " Wheat "),
         )
-    }
-
-    @Test
-    fun `query filters are lowercased and encoded`() {
-        assertEquals(
-            "http://host:8000/prices?crop=wheat&market=khammam",
-            PriceUrls.listUrl("host:8000", " Wheat ", " Khammam "),
-        )
-        assertEquals("wheat|khammam", PriceUrls.cacheKey("Wheat", "Khammam"))
-        assertEquals("wheat|", PriceUrls.cacheKey("wheat", null))
+        assertEquals("wheat", PriceUrls.cacheKey(" Wheat "))
     }
 }

@@ -5,58 +5,107 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-data class PricePoint(
-    val crop: String,
-    val market: String,
-    val pricePerKgPaise: Int,
-    val source: String,
+data class Trade(
+    val eventId: String,
+    val batchId: String,
     val ts: Long,
+    val tokens: Int,
+    val pricePerKgPaise: Int,
+    val grade: String,
+    val fromActorId: String,
+    val toActorId: String,
 )
 
-data class PriceSnapshot(
+data class TradePriceSnapshot(
+    val crop: String,
+    val grade: String?,
+    val method: String,
+    val sampleSize: Int,
+    val pricePerKgPaise: Int?,
+    val byGrade: Map<String, Int?>,
     val updatedAt: Long,
-    val prices: List<PricePoint>,
+    val trades: List<Trade>,
 )
 
-object PriceJson {
+object TradePriceJson {
 
-    fun parse(body: String): PriceSnapshot {
+    fun parse(body: String): TradePriceSnapshot {
         val root = JSONObject(body)
         val updatedAt = root.optLong("updatedAt", 0L)
-        val array = root.optJSONArray("prices") ?: JSONArray()
-        val prices = buildList {
+        val array = root.optJSONArray("trades") ?: JSONArray()
+        val trades = buildList {
             for (index in 0 until array.length()) {
                 val item = array.getJSONObject(index)
                 add(
-                    PricePoint(
-                        crop = item.getString("crop"),
-                        market = item.getString("market"),
+                    Trade(
+                        eventId = item.optString("eventId", ""),
+                        batchId = item.optString("batchId", ""),
+                        ts = item.optLong("ts", 0L),
+                        tokens = item.optInt("tokens", 0),
                         pricePerKgPaise = item.getInt("pricePerKgPaise"),
-                        source = item.optString("source", ""),
-                        ts = item.optLong("ts", updatedAt),
+                        grade = item.optString("grade", ""),
+                        fromActorId = item.optString("fromActorId", ""),
+                        toActorId = item.optString("toActorId", ""),
                     )
                 )
             }
         }
-        return PriceSnapshot(updatedAt = updatedAt, prices = prices)
+        val byGradeJson = root.optJSONObject("byGrade")
+        val byGrade = buildMap {
+            for (grade in listOf("A", "B", "C")) {
+                if (byGradeJson != null && byGradeJson.has(grade) && !byGradeJson.isNull(grade)) {
+                    put(grade, byGradeJson.getInt(grade))
+                }
+            }
+        }
+        return TradePriceSnapshot(
+            crop = root.optString("crop", ""),
+            grade = if (root.isNull("grade")) null else root.optString("grade").ifBlank { null },
+            method = root.optString("method", "median20"),
+            sampleSize = root.optInt("sampleSize", trades.size),
+            pricePerKgPaise = if (root.isNull("pricePerKgPaise")) {
+                null
+            } else {
+                root.optInt("pricePerKgPaise")
+            },
+            byGrade = byGrade,
+            updatedAt = updatedAt,
+            trades = trades,
+        )
     }
 
-    fun encode(snapshot: PriceSnapshot): String {
+    fun encode(snapshot: TradePriceSnapshot): String {
         val array = JSONArray()
-        snapshot.prices.forEach { point ->
+        snapshot.trades.forEach { trade ->
             array.put(
                 JSONObject()
-                    .put("crop", point.crop)
-                    .put("market", point.market)
-                    .put("pricePerKgPaise", point.pricePerKgPaise)
-                    .put("source", point.source)
-                    .put("ts", point.ts)
+                    .put("eventId", trade.eventId)
+                    .put("batchId", trade.batchId)
+                    .put("ts", trade.ts)
+                    .put("tokens", trade.tokens)
+                    .put("pricePerKgPaise", trade.pricePerKgPaise)
+                    .put("grade", trade.grade)
+                    .put("fromActorId", trade.fromActorId)
+                    .put("toActorId", trade.toActorId)
             )
         }
+        val grades = JSONObject()
+        snapshot.byGrade.forEach { (grade, price) ->
+            grades.put(grade, price ?: JSONObject.NULL)
+        }
         return JSONObject()
+            .put("crop", snapshot.crop)
+            .put("grade", snapshot.grade ?: JSONObject.NULL)
+            .put("method", snapshot.method)
+            .put("sampleSize", snapshot.sampleSize)
+            .put("pricePerKgPaise", snapshot.pricePerKgPaise ?: JSONObject.NULL)
+            .put("byGrade", grades)
             .put("updatedAt", snapshot.updatedAt)
-            .put("prices", array)
+            .put("trades", array)
             .toString()
     }
 }
@@ -82,18 +131,18 @@ data class PriceBar(
 
 object PriceBars {
 
-    fun build(points: List<PricePoint>): List<PriceBar> {
-        val maximum = points.maxOfOrNull { it.pricePerKgPaise } ?: return emptyList()
-        return points
-            .sortedByDescending { it.pricePerKgPaise }
-            .map { point ->
-                PriceBar(
-                    label = point.market,
-                    pricePerKgPaise = point.pricePerKgPaise,
-                    fraction = if (maximum <= 0) 0f else point.pricePerKgPaise.toFloat() / maximum,
-                    source = point.source,
-                )
-            }
+    fun build(trades: List<Trade>): List<PriceBar> {
+        val window = trades.takeLast(20)
+        val maximum = window.maxOfOrNull { it.pricePerKgPaise } ?: return emptyList()
+        val format = SimpleDateFormat("dd MMM HH:mm", Locale.US)
+        return window.map { trade ->
+            PriceBar(
+                label = format.format(Date(trade.ts)),
+                pricePerKgPaise = trade.pricePerKgPaise,
+                fraction = if (maximum <= 0) 0f else trade.pricePerKgPaise.toFloat() / maximum,
+                source = "${trade.tokens} kg · grade ${trade.grade}",
+            )
+        }
     }
 }
 
@@ -114,31 +163,10 @@ object PriceUrls {
         return withScheme.trimEnd('/')
     }
 
-    fun listUrl(baseUrl: String, crop: String?, market: String?): String {
-        val base = normalizeBaseUrl(baseUrl) + "/prices"
-        val params = buildList {
-            if (!crop.isNullOrBlank()) {
-                add("crop=" + encode(crop.trim().lowercase()))
-            }
-            if (!market.isNullOrBlank()) {
-                add("market=" + encode(market.trim().lowercase()))
-            }
-        }
-        return if (params.isEmpty()) base else "$base?${params.joinToString("&")}"
-    }
+    fun tradesUrl(baseUrl: String, crop: String): String =
+        normalizeBaseUrl(baseUrl) + "/trades?crop=" + encode(crop.trim().lowercase())
 
-    fun refreshUrl(baseUrl: String): String =
-        normalizeBaseUrl(baseUrl) + "/prices/refresh"
-
-    fun refreshBody(crop: String?, market: String?): String {
-        val body = JSONObject()
-        if (!crop.isNullOrBlank()) body.put("crop", crop.trim().lowercase())
-        if (!market.isNullOrBlank()) body.put("market", market.trim().lowercase())
-        return body.toString()
-    }
-
-    fun cacheKey(crop: String, market: String?): String =
-        "${crop.trim().lowercase()}|${market?.trim()?.lowercase().orEmpty()}"
+    fun cacheKey(crop: String): String = crop.trim().lowercase()
 
     private fun encode(value: String): String =
         URLEncoder.encode(value, StandardCharsets.UTF_8.name())

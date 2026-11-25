@@ -29,7 +29,7 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T15 | Contract v2: per-actor chains, BIND, permissions, admin token, pagination (docs only) | done | Laasya | task-T15-laasya | README.md | — |
 | T16 | Device readiness: permissions, box foreground service, SMS default SIM, scripts/dev.sh | done | charan | task-T16-device-readiness-charan | APP/box/, APP/mesh/, APP/core/Permissions.kt, APP/MainActivity.kt, android/app/src/main/AndroidManifest.xml, android/app/src/main/res/layout/activity_{main,box,mesh}.xml, android/app/src/main/res/drawable/, android/app/build.gradle.kts, scripts/dev.sh, README.md | — |
 | T17 | Canonical JSON vectors + on-device parity | open | — | — | contracts/, ledger/tests/, android/app/src/test/, android/app/src/androidTest/ | — |
-| T18 | Remove mandi, add token price (median20) | claimed | Laasya | task-T18-laasya | ledger/prices.py, ledger/app.py, ledger/tokens.py, ledger/validation.py, ledger/tests/, APP/prices/, layouts, manifest, demo/seed.py, README.md | — |
+| T18 | Remove mandi, add token price (median20) | done | Laasya | task-T18-laasya | ledger/prices.py, ledger/app.py, ledger/tokens.py, ledger/validation.py, ledger/tests/, APP/prices/, APP/buyer/, APP/mesh/HttpLedgerGateway.kt, layouts, manifest, demo/seed.py, ledger/web/, README.md | - |
 | T19 | Ledger v2: chains, permissions, BIND, admin token, pagination, verify | open | — | — | ledger/ | T15 |
 | T20 | Android v2: per-chain writer, BIND UI, admin token, tamper traceHead, sync planner | open | — | — | APP/core/, APP/box/, APP/data/, APP/batch/, APP/buyer/, APP/ui/, tests | T15, T19 |
 | T21 | SMS hardening: ACK rules, dedupe, binary v3 | open | — | — | APP/mesh/, android/app/src/test/java/com/agrichain/mesh/ | T15 |
@@ -237,6 +237,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-25 13:52] FROM Laasya → all: claiming T15 (contract v2 docs) on task-T15-laasya. I will write the per-(batchId, actorId, stream) chain rules, BIND authorization, permission matrix, admin token, retry codes, pagination and `/route`. No code in this task; T19/T20 implement it. Device-only checks are listed in the new Device test checklist. | open
 - [2026-11-25 14:05] FROM Laasya → all: T15 done on task-T15-laasya. Contract v2 is in README: per-(batchId, actorId, stream) chains (`trace` GPS, `main` otherwise, own genesis), BIND + permission matrix, admin token, retry codes, pagination, `/route`, median20 trades, signed roots, SMS v3, audit-finding mapping and the D1–D9 device checklist. No code yet; T19/T20 implement it. Device checks stay pending (no phone attached). | done
 - [2026-11-25 14:20] FROM Laasya → all: claiming T18 on task-T18-laasya. Remove `ledger/prices.py`, `/prices` routes, the `market` batch and `PRICE` events; replace the mandi screen with a reported token price from `GET /trades` (`median20`, last 20 priced TRANSFERs, self-trades excluded, `byGrade`). Touches add `ledger/tokens.py` and `ledger/validation.py`; no T19/T20 files yet. | open
+- [2026-11-25 14:33] FROM Laasya → all: T18 done on task-T18-laasya. Deleted `ledger/prices.py` and both `/prices` routes; `PRICE` events now return `400 price_removed` and the `market` batch is gone. `GET /trades` returns `method:"median20"`, `sampleSize`, `byGrade` and the last priced TRANSFERs. Android: the "Mandi prices" screen is now "Token price" (crop picker, median + grade breakdown, last-20 chart, offline cache); the buyer label and dead `PRICE`/`market` branches are removed. Dashboard shows token prices; `demo/seed.py` prints the token price. Tests: 28 ledger, 59 Android. Live seed on a temp ledger: wheat `2500` paise/kg, sample 2, `/prices` 404. No phone attached, so the new screen is unit-tested only, not device-verified. | done
 - [2026-11-25 13:20] FROM charan → all: audit round 2 board added as T15-T24 (old T15/T16 stay complete in history). I am claiming T16 device readiness: permissions per API level, box foreground service, default-SIM SMS, and `scripts/dev.sh`. I will touch only the T16 paths; T15 docs, T17 vectors and T18 token prices are free. | open
 - [2026-11-25 13:45] FROM charan → all: T16 done on task-T16-device-readiness-charan. One permission flow in `APP/core/Permissions.kt` names every denied runtime permission (API 31 Bluetooth, API 33 Nearby Wi-Fi + notifications, SMS, location, camera); the box runs GPS/tamper in a location foreground service with a partial wake lock; SMS sends on the default SMS subscription and logs sent/delivered; every log tag is `AgriChain`; `scripts/dev.sh` holds the adb cheat sheet. Device evidence: `permissions: all 10 granted`; after revoking one, `permissions: denied 1/10: android.permission.NEARBY_WIFI_DEVICES`; box `isForeground=true`, `mWakefulness=Asleep` at start and end, 90 signed GPS events over 2 min; `mesh: nearby: advertising as phone-1a373543`; no AndroidRuntime crash. Actual SMS sent/delivered and 2-phone radio tests remain manual. | done
 
@@ -311,7 +312,7 @@ Run (updated as tasks land):
 # Or run ./tools/ledger.sh in one terminal and ./tools/phone.sh in another.
 # In the app: "Auto-detect ledger" on the launcher (or Ledger sync → "Use USB").
 # The app probes saved → 127.0.0.1 (USB) → 10.0.2.2 (emulator) → LAN and keeps the
-# first healthy /health. Prices, sync, buyer and box all share that saved host.
+# first healthy /health. Token price, sync, buyer and box all share that saved host.
 # adb reverse maps phone 127.0.0.1:8000 to this laptop; Wi-Fi is not needed.
 # adb cheat sheet (install / reverse / logs / grant / ui): ./scripts/dev.sh help
 
@@ -339,9 +340,9 @@ cd android && ./gradlew installDebug
 #  - "Simulate tamper (demo)" emits a TAMPER event without touching the sensors.
 
 # Token price (T18)
-# Launcher → "Token price"; pick crop and grade. GET /trades returns the median of the last
-# 20 priced TRANSFERs (self-trades excluded), method "median20". This is reported token
-# data, not mandi data; the last successful response is cached for offline viewing.
+# Launcher → "Token price"; pick a crop. GET /trades returns the median of the last
+# 20 priced TRANSFERs (self-trades excluded) plus byGrade, method "median20". This is
+# reported token data, not mandi data; the last successful response is cached offline.
 
 # Buyer history (T8)
 # Buyer → set the ledger host (LAN IP on a phone), scan the farmer QR or paste a batch id.

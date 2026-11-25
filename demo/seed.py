@@ -5,8 +5,9 @@
     python3 demo/seed.py --base-url http://127.0.0.1:8000
 
 Registers four actors, two batches, box GPS + tamper events, two priced
-transfers, a barter offer/accept, and refreshes mandi prices. Prints the batch
-ids to paste into the Android Buyer screen.
+transfers, and a barter offer/accept. Prints the batch ids to paste into the
+Android Buyer screen and the reported token price (median of the last 20
+priced transfers).
 """
 
 from __future__ import annotations
@@ -222,21 +223,17 @@ def main() -> None:
     )
     post(base, accept, "Meena accepts barter")
 
-    call(base, "POST", "/prices/refresh", {})
-    _, prices = call(base, "GET", "/prices?crop=wheat")
     _, trades = call(base, "GET", "/trades?crop=wheat")
     _, summary_a = call(base, "GET", f"/batches/{batch_a}")
     _, summary_b = call(base, "GET", f"/batches/{batch_b}")
     _, verify_a = call(base, "GET", f"/batches/{batch_a}/verify")
 
-    wheat_prices = [
-        f"{item['market']} {item['pricePerKgPaise']}"
-        for item in prices.get("prices", [])
-        if item["crop"] == "wheat"
-    ]
     print("\nLedger state")
-    print(f"  wheat mandi prices  {', '.join(wheat_prices) or 'none'} paise/kg")
-    print(f"  trade price         {trades['pricePerKgPaise']} paise/kg (token-weighted)")
+    price = trades.get("pricePerKgPaise")
+    print(
+        f"  token price         {price if price is not None else 'none'} paise/kg "
+        f"({trades.get('method', 'median20')}, sample {trades.get('sampleSize', 0)})"
+    )
     print(f"  batch A balances    {summary_a['balances']}")
     print(f"  batch B balances    {summary_b['balances']}")
     print(f"  batch A tamper      {summary_a['tamperCount']} event(s)")

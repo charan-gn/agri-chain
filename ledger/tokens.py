@@ -38,33 +38,67 @@ def assert_transfer_allowed(history: list[dict], event: dict) -> None:
 
 
 def trades_for_crop(batches: list[list[dict]], crop: str) -> list[dict]:
+    """Priced TRANSFERs for a crop, oldest first.
+
+    Self-trades and non-positive prices are excluded: they cannot be used as
+    market evidence and would let one actor wash-trade a price.
+    """
     trades = []
     for events in batches:
         if not events or events[0]["type"] != "REGISTER":
             continue
-        if events[0]["data"].get("crop") != crop:
+        register = events[0]["data"]
+        if register.get("crop") != crop:
             continue
+        batch_grade = register.get("grade")
         for event in events:
-            if event["type"] != "TRANSFER" or "pricePerKgPaise" not in event["data"]:
+            if event["type"] != "TRANSFER":
+                continue
+            data = event["data"]
+            if "pricePerKgPaise" not in data:
+                continue
+            price = int(data["pricePerKgPaise"])
+            if price <= 0:
+                continue
+            source = event["actorId"]
+            target = data.get("toActorId")
+            if source == target:
                 continue
             trades.append(
                 {
                     "batchId": event["batchId"],
                     "eventId": event["eventId"],
                     "ts": event["ts"],
-                    "tokens": int(event["data"]["tokens"]),
-                    "pricePerKgPaise": int(event["data"]["pricePerKgPaise"]),
-                    "fromActorId": event["actorId"],
-                    "toActorId": event["data"]["toActorId"],
+                    "tokens": int(data["tokens"]),
+                    "pricePerKgPaise": price,
+                    "grade": data.get("grade", batch_grade),
+                    "fromActorId": source,
+                    "toActorId": target,
                 }
             )
     trades.sort(key=lambda trade: (trade["ts"], trade["eventId"]))
     return trades
 
 
-def weighted_price(trades: list[dict]) -> int | None:
-    total_tokens = sum(trade["tokens"] for trade in trades)
-    if total_tokens == 0:
+def median20_price(trades: list[dict]) -> int | None:
+    """Median of the last 20 priced trades; lower-middle for even counts."""
+    prices = sorted(int(trade["pricePerKgPaise"]) for trade in trades[-20:])
+    if not prices:
         return None
-    total_value = sum(trade["tokens"] * trade["pricePerKgPaise"] for trade in trades)
-    return round(total_value / total_tokens)
+    middle = len(prices) // 2
+    if len(prices) % 2:
+        return prices[middle]
+    return (prices[middle - 1] + prices[middle]) // 2
+
+
+def price_summary(trades: list[dict]) -> dict:
+    by_grade = {
+        grade: median20_price([trade for trade in trades if trade.get("grade") == grade])
+        for grade in ("A", "B", "C")
+    }
+    return {
+        "method": "median20",
+        "sampleSize": min(len(trades), 20),
+        "pricePerKgPaise": median20_price(trades),
+        "byGrade": by_grade,
+    }

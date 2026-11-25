@@ -29,10 +29,7 @@ ALLOWED_TYPES = {
     "TAMPER",
     "DELIVER",
     "BARTER",
-    "PRICE",
 }
-
-MARKET_BATCH = "market"
 
 
 def canonical_event(event: dict) -> str:

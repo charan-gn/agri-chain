@@ -118,10 +118,7 @@ class LedgerDb:
             head = head_row["hash"] if head_row else ""
 
             if not head:
-                genesis_allowed = event["type"] == "REGISTER" or (
-                    event["batchId"] == "market" and event["type"] == "PRICE"
-                )
-                if not genesis_allowed:
+                if event["type"] != "REGISTER":
                     raise BatchNotFound(event["batchId"])
                 if event["prevHash"] != "":
                     raise PrevMismatch("")

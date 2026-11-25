@@ -121,9 +121,9 @@ class BuyerHistoryActivity : AppCompatActivity() {
             "${BatchHistory.shortActor(actor)}: $kg kg"
         }
         binding.tradePrice.text = if (tradePricePaise == null) {
-            "Trade price: no trades yet"
+            "Token price (median20): no priced trades yet"
         } else {
-            "Trade price: ${BatchHistory.rupees(tradePricePaise)}/kg"
+            "Token price (median20): ${BatchHistory.rupees(tradePricePaise)}/kg"
         }
 
         binding.routeView.setPoints(history.route)

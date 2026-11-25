@@ -8,9 +8,10 @@ const TYPE_CLASS = {
   TAMPER: "bad",
   DELIVER: "info",
   GPS: "info",
-  PRICE: "violet",
   BARTER: "violet",
 };
+
+const PRICE_CROPS = ["wheat", "rice", "maize", "chilli", "cotton"];
 
 const state = {
   auto: true,
@@ -138,7 +139,7 @@ function renderFeed(events) {
     <li>
       <span class="badge ${TYPE_CLASS[event.type] || "muted"}">${esc(event.type)}</span>
       <span class="event-main">
-        <strong>${esc(event.crop || (event.batchId === "market" ? "market" : "batch"))}</strong>
+        <strong>${esc(event.crop || "batch")}</strong>
         <span>${esc(actor(event.actorId))} · ${esc(short(event.batchId, 12))}</span>
       </span>
       <time datetime="${esc(new Date(event.ts).toISOString())}">${fmtTime(event.ts)}</time>
@@ -164,27 +165,40 @@ function renderOffers(offers) {
   $("#offerEmpty").classList.toggle("hidden", offers.length > 0);
 }
 
-function renderPrices(prices) {
-  const groups = new Map();
-  for (const price of prices) {
-    if (!groups.has(price.crop)) groups.set(price.crop, []);
-    groups.get(price.crop).push(price);
-  }
-  $("#priceGrid").innerHTML = [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([crop, rows]) => `
+function renderTokenPrices(summaries) {
+  $("#priceGrid").innerHTML = summaries
+    .slice()
+    .sort((a, b) => String(a.crop).localeCompare(String(b.crop)))
+    .map((summary) => {
+      const grades = summary.byGrade || {};
+      return `
       <article class="price-card">
-        <h3>${esc(crop)}</h3>
-        ${rows.map((price) => `
+        <h3>${esc(summary.crop)}</h3>
+        <div class="price-row median">
+          <span class="grade">median20</span>
+          <b>${summary.pricePerKgPaise == null ? "no trades" : `${fmtPaise(summary.pricePerKgPaise)}/kg`}</b>
+        </div>
+        <div class="price-row">
+          <span class="grade">sample</span>
+          <b>${fmtInt(summary.sampleSize || 0)}</b>
+        </div>
+        ${["A", "B", "C"].map((grade) => `
           <div class="price-row">
-            <span class="market">${esc(price.market)}</span>
-            <b>${fmtPaise(price.pricePerKgPaise)}/kg</b>
+            <span class="grade">grade ${grade}</span>
+            <b>${grades[grade] == null ? "—" : `${fmtPaise(grades[grade])}/kg`}</b>
           </div>`).join("")}
-      </article>`).join("");
-  $("#priceEmpty").classList.toggle("hidden", prices.length > 0);
-  $("#priceUpdated").textContent = prices.length
-    ? `updated ${fmtTime(Math.max(...prices.map((price) => price.ts)))}`
-    : "";
+      </article>`;
+    })
+    .join("");
+  const updated = Math.max(
+    0,
+    ...summaries.map((summary) => Number(summary.updatedAt) || 0),
+  );
+  $("#priceEmpty").classList.toggle(
+    "hidden",
+    summaries.some((summary) => summary.pricePerKgPaise != null),
+  );
+  $("#priceUpdated").textContent = updated ? `updated ${fmtTime(updated)}` : "";
 }
 
 function dataValue(key, value) {
@@ -289,18 +303,20 @@ async function refresh() {
   const button = $("#refreshButton");
   button.disabled = true;
   try {
-    const [stats, batchBody, offerBody, priceBody] = await Promise.all([
+    const [stats, batchBody, offerBody, ...priceBodies] = await Promise.all([
       get("/stats?limit=14"),
       get("/batches"),
       get("/barter/offers"),
-      get("/prices"),
+      ...PRICE_CROPS.map((crop) =>
+        get(`/trades?crop=${encodeURIComponent(crop)}`).catch(() => null),
+      ),
     ]);
     state.batches = batchBody.batches || [];
     renderStats(stats);
     renderBatches(state.batches);
     renderFeed(stats.recent || []);
     renderOffers(offerBody.offers || []);
-    renderPrices(priceBody.prices || []);
+    renderTokenPrices(priceBodies.filter(Boolean));
     setHealth(true);
     hideBanner();
     await loadSelected();

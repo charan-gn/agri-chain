@@ -101,8 +101,7 @@ class HttpLedgerGateway(context: Context) : LedgerGateway {
 
     private fun canAppend(event: Event, head: String): Boolean {
         if (head.isEmpty()) {
-            return event.prevHash.isEmpty() &&
-                (event.type == "REGISTER" || (event.batchId == "market" && event.type == "PRICE"))
+            return event.prevHash.isEmpty() && event.type == "REGISTER"
         }
         return event.type != "REGISTER" && event.prevHash == head
     }

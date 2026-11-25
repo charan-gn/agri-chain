@@ -6,7 +6,7 @@ import re
 import uuid
 from typing import Any
 
-from crypto import ALLOWED_TYPES, MARKET_BATCH
+from crypto import ALLOWED_TYPES
 
 ROLES = {"farmer", "buyer", "box"}
 TAMPER_KINDS = {"movement", "light", "proximity", "geofence"}
@@ -30,6 +30,10 @@ EVENT_FIELDS = {
 
 
 class ValidationError(ValueError):
+    pass
+
+
+class PriceRemoved(ValidationError):
     pass
 
 
@@ -143,11 +147,7 @@ def validate_type_data(event_type: str, data: dict) -> None:
         require_int(data, "giveKg", positive=True)
         parse_uuid(data.get("wantBatchId"), "data.wantBatchId", version=4)
         require_int(data, "wantKg", positive=True)
-    elif event_type == "PRICE":
-        require_ascii(data.get("crop"), "data.crop")
-        require_ascii(data.get("market"), "data.market")
-        require_int(data, "pricePerKgPaise", non_negative=True)
-        require_ascii(data.get("source"), "data.source")
+
 
 
 def validate_event(raw: Any) -> dict:
@@ -165,16 +165,12 @@ def validate_event(raw: Any) -> dict:
     parse_uuid(raw["eventId"], "eventId")
 
     event_type = raw["type"]
+    if event_type == "PRICE":
+        raise PriceRemoved("PRICE events were removed in v2; use priced TRANSFERs")
     if event_type not in ALLOWED_TYPES:
         fail("unknown event type")
 
-    if event_type == "PRICE":
-        if raw["batchId"] != MARKET_BATCH:
-            fail('PRICE events must use batchId="market"')
-    else:
-        if raw["batchId"] == MARKET_BATCH:
-            fail('batchId="market" is reserved for PRICE events')
-        parse_uuid(raw["batchId"], "batchId", version=4)
+    parse_uuid(raw["batchId"], "batchId", version=4)
 
     parse_actor_id(raw["actorId"])
 

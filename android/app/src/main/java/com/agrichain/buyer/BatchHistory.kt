@@ -97,8 +97,6 @@ data class BatchHistory(
             }
             "BARTER" -> "${data.optString("action")} · ${data.optInt("giveKg")} kg for " +
                 "${data.optInt("wantKg")} kg"
-            "PRICE" -> "${data.optString("market")} · " +
-                "${rupees(data.optInt("pricePerKgPaise"))}/kg"
             else -> type
         }
     }

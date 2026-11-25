@@ -103,7 +103,7 @@ def test_contract_hash_vector():
 
 
 def test_health(client):
-    assert client.get("/health").json() == {"ok": True}
+    assert client.get("/health").json() == {"ok": True, "version": 2}
 
 
 def test_actor_registration_and_lookup(client):
@@ -311,30 +311,20 @@ def test_bulk_returns_per_event_results(client, farmer):
     assert results[1]["error"] == "bad_hash"
 
 
-def test_market_price_chain(client, farmer):
+def test_price_events_are_removed(client, farmer):
     actor_id, key = farmer
-    first = make_event(
+    event = make_event(
         actor_id,
         key,
         "market",
         "PRICE",
         {"crop": "wheat", "market": "warangal", "pricePerKgPaise": 2450, "source": "test"},
     )
-    assert client.post("/events", json=first).status_code == 201
-    second = make_event(
-        actor_id,
-        key,
-        "market",
-        "PRICE",
-        {"crop": "wheat", "market": "warangal", "pricePerKgPaise": 2500, "source": "test"},
-        prev_hash=first["hash"],
-    )
-    assert client.post("/events", json=second).status_code == 201
-
-    events = client.get("/events?batchId=market").json()
-    assert len(events["events"]) == 2
-    assert client.get("/batches/market").status_code == 404
-    assert client.get("/batches/market/verify").status_code == 404
+    response = client.post("/events", json=event)
+    assert response.status_code == 400
+    assert response.json()["error"] == "price_removed"
+    assert client.get("/prices").status_code == 404
+    assert client.post("/prices/refresh", json={}).status_code == 404
 
 
 def test_gps_requires_coordinates(client, farmer):
@@ -433,7 +423,7 @@ def test_buyer_can_resell_received_tokens(client, farmer):
     assert summary["verified"] is True
 
 
-def test_trade_price_is_token_weighted(client, farmer):
+def test_trade_price_is_median20(client, farmer):
     actor_id, key = farmer
     buyer_id, _ = make_actor(client, "buyer")
 
@@ -447,27 +437,33 @@ def test_trade_price_is_token_weighted(client, farmer):
     )
     assert client.post("/events", json=wheat_register).status_code == 201
 
-    first = make_event(
-        actor_id,
-        key,
-        wheat_batch,
-        "TRANSFER",
-        {"toActorId": buyer_id, "tokens": 10, "pricePerKgPaise": 2000},
-        prev_hash=wheat_register["hash"],
-        ts=1764000001000,
-    )
-    assert client.post("/events", json=first).status_code == 201
+    previous = wheat_register["hash"]
+    priced = []
+    for index, price in enumerate((2000, 3000, 4000)):
+        event = make_event(
+            actor_id,
+            key,
+            wheat_batch,
+            "TRANSFER",
+            {"toActorId": buyer_id, "tokens": 10, "pricePerKgPaise": price},
+            prev_hash=previous,
+            ts=1764000001000 + index,
+        )
+        assert client.post("/events", json=event).status_code == 201
+        priced.append(event)
+        previous = event["hash"]
 
-    second = make_event(
+    self_trade = make_event(
         actor_id,
         key,
         wheat_batch,
         "TRANSFER",
-        {"toActorId": buyer_id, "tokens": 20, "pricePerKgPaise": 3000},
-        prev_hash=first["hash"],
+        {"toActorId": actor_id, "tokens": 1, "pricePerKgPaise": 99999},
+        prev_hash=previous,
         ts=1764000002000,
     )
-    assert client.post("/events", json=second).status_code == 201
+    assert client.post("/events", json=self_trade).status_code == 201
+    previous = self_trade["hash"]
 
     no_price = make_event(
         actor_id,
@@ -475,40 +471,42 @@ def test_trade_price_is_token_weighted(client, farmer):
         wheat_batch,
         "TRANSFER",
         {"toActorId": buyer_id, "tokens": 5},
-        prev_hash=second["hash"],
+        prev_hash=previous,
         ts=1764000003000,
     )
     assert client.post("/events", json=no_price).status_code == 201
 
-    rice_batch = str(uuid.uuid4())
-    rice_register = make_event(
-        actor_id,
-        key,
-        rice_batch,
-        "REGISTER",
-        {"crop": "rice", "grade": "A", "weightKg": 50},
-    )
-    assert client.post("/events", json=rice_register).status_code == 201
-    rice_transfer = make_event(
-        actor_id,
-        key,
-        rice_batch,
-        "TRANSFER",
-        {"toActorId": buyer_id, "tokens": 10, "pricePerKgPaise": 9999},
-        prev_hash=rice_register["hash"],
-    )
-    assert client.post("/events", json=rice_transfer).status_code == 201
-
     trades = client.get("/trades?crop=wheat").json()
     assert trades["crop"] == "wheat"
-    assert trades["pricePerKgPaise"] == 2667
+    assert trades["method"] == "median20"
+    assert trades["sampleSize"] == 3
+    assert trades["pricePerKgPaise"] == 3000
+    assert trades["byGrade"]["A"] == 3000
+    assert [trade["pricePerKgPaise"] for trade in trades["trades"]] == [2000, 3000, 4000]
     assert [trade["eventId"] for trade in trades["trades"]] == [
-        first["eventId"],
-        second["eventId"],
+        event["eventId"] for event in priced
     ]
-    assert trades["trades"][0]["fromActorId"] == actor_id
-    assert trades["trades"][0]["toActorId"] == buyer_id
+    assert all(
+        trade["fromActorId"] != trade["toActorId"] for trade in trades["trades"]
+    )
+
+    grade_a = client.get("/trades?crop=wheat&grade=A").json()
+    assert grade_a["pricePerKgPaise"] == 3000
+    grade_b = client.get("/trades?crop=wheat&grade=B").json()
+    assert grade_b["pricePerKgPaise"] is None
+    assert grade_b["trades"] == []
 
     empty = client.get("/trades?crop=maize").json()
     assert empty["pricePerKgPaise"] is None
     assert empty["trades"] == []
+    assert empty["method"] == "median20"
+
+
+def test_median20_even_count_uses_lower_middle():
+    from tokens import median20_price
+
+    trades = [
+        {"pricePerKgPaise": 2000},
+        {"pricePerKgPaise": 3001},
+    ]
+    assert median20_price(trades) == 2500

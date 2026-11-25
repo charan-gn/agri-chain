@@ -88,7 +88,7 @@
         <activity
             android:name=".prices.PricesActivity"
             android:exported="false"
-            android:label="Mandi prices" />
+            android:label="Token price" />
 
         <activity
             android:name=".data.SyncActivity"
