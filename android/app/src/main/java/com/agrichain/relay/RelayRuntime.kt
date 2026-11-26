@@ -50,10 +50,23 @@ object RelayRuntime {
     var wifi: WifiTransport? = null
         private set
 
+    @Volatile
+    var sms: SmsTransport? = null
+        private set
+
+    @Volatile
+    var ble: BleTransport? = null
+        private set
+
+    @Volatile
+    var lora: LoRaTransport? = null
+        private set
+
     private lateinit var appContext: Context
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = mutableListOf<Job>()
     private var gatewayClient: V3LedgerClient? = null
+    private val smsRoutes = HashMap<String, String>()
 
     @Synchronized
     fun start(context: Context): String? {
@@ -81,7 +94,10 @@ object RelayRuntime {
         identity = signer
 
         val caps = settings.caps or
-            (if (settings.gatewayEnabled) V3Settings.CAP_GATEWAY else 0)
+            (if (settings.gatewayEnabled) V3Settings.CAP_GATEWAY else 0) or
+            (if (settings.smsEnabled || settings.smsGatewayMode) V3Settings.CAP_SMS else 0) or
+            (if (settings.bleEnabled) V3Settings.CAP_BLE else 0) or
+            (if (settings.loraEnabled) V3Settings.CAP_LORA else 0)
         val config = RelayConfig(
             nick = settings.nick.ifBlank { "phone" },
             caps = caps,
@@ -114,6 +130,34 @@ object RelayRuntime {
         wifi = wifiTransport
         core = relay
 
+        if (settings.smsEnabled || settings.smsGatewayMode) {
+            val smsTransport = SmsTransport(
+                context = appContext,
+                scope = scope,
+                gatewayNumber = { V3Settings(appContext).smsGateway.takeIf { it.isNotBlank() } },
+                gatewayMode = { V3Settings(appContext).smsGatewayMode },
+            )
+            relay.attach(smsTransport)
+            relay.smsFallback = { number, envelope -> smsTransport.sendEnvelopeTo(number, envelope) }
+            sms = smsTransport
+        }
+
+        if (settings.bleEnabled) {
+            val bleTransport = BleTransport(appContext, signer.actorId) {
+                V3Settings(appContext).bleEnabled
+            }
+            relay.attach(bleTransport)
+            ble = bleTransport
+        }
+
+        if (settings.loraEnabled) {
+            val loraTransport = LoRaTransport(appContext, scope) {
+                V3Settings(appContext).loraEnabled
+            }
+            relay.attach(loraTransport)
+            lora = loraTransport
+        }
+
         jobs += scope.launch {
             runCatching { relay.start() }
                 .onFailure { Log.e(TAG, "relay: transport start failed: ${it.message}") }
@@ -136,7 +180,11 @@ object RelayRuntime {
         scope.launch { runCatching { relay.stop() } }
         core = null
         wifi = null
+        sms = null
+        ble = null
+        lora = null
         gatewayClient = null
+        synchronized(smsRoutes) { smsRoutes.clear() }
         _status.value = "stopped"
         Log.i(TAG, "relay: stopped")
     }
@@ -163,6 +211,21 @@ object RelayRuntime {
         body: V3Body,
         toId: ByteArray? = null,
     ): Originated? = core?.originate(type, body, toId, V3Settings(appContext).meshTtl)
+
+    /**
+     * Inbound SMS from [SmsReceiver]. The phone number becomes the link id so a
+     * RECEIPT can be sent back to the same handset.
+     */
+    suspend fun onSmsEnvelope(envelope: ByteArray, phone: String): RelayOutcome? {
+        val relay = core ?: return null
+        val msg = runCatching {
+            V3Codec.decode(V3Codec.decodeEnvelope(envelope).second)
+        }.getOrNull() ?: return null
+        val msgId = V3Codec.hex(V3Codec.msgId(msg))
+        synchronized(smsRoutes) { smsRoutes[msgId] = phone }
+        sms?.notePeer(phone)
+        return relay.onEnvelope(envelope, phone, "sms")
+    }
 
     fun settings(context: Context): V3Settings = V3Settings(context)
 
@@ -215,6 +278,14 @@ object RelayRuntime {
                 is RelayEvent.Receipt -> {
                     if (event.receipt.rejected) {
                         orders.updateStatus(event.receipt.msgId, "rejected")
+                    }
+                    val phone = synchronized(smsRoutes) { smsRoutes.remove(event.receipt.msgId) }
+                    val raw = event.raw
+                    val transport = sms
+                    if (phone != null && raw != null && transport != null) {
+                        scope.launch {
+                            transport.sendEnvelopeTo(phone, V3Codec.encodeEnvelope(raw, 7))
+                        }
                     }
                 }
                 is RelayEvent.Notice -> {

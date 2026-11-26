@@ -50,6 +50,9 @@ class SettingsV3Activity : AppCompatActivity() {
         binding.gatewaySwitch.isChecked = settings.gatewayEnabled
         binding.smsSwitch.isChecked = settings.smsEnabled
         binding.smsGatewayInput.setText(settings.smsGateway)
+        binding.smsGatewaySwitch.isChecked = settings.smsGatewayMode
+        binding.bleSwitch.isChecked = settings.bleEnabled
+        binding.loraSwitch.isChecked = settings.loraEnabled
         binding.roleSpinner.setSelection(
             listOf("farmer", "buyer", "box", "gateway").indexOf(settings.role).coerceAtLeast(0),
         )
@@ -79,9 +82,14 @@ class SettingsV3Activity : AppCompatActivity() {
             settings.gatewayEnabled = binding.gatewaySwitch.isChecked
             settings.smsEnabled = binding.smsSwitch.isChecked
             settings.smsGateway = binding.smsGatewayInput.text.toString()
+            settings.smsGatewayMode = binding.smsGatewaySwitch.isChecked
+            settings.bleEnabled = binding.bleSwitch.isChecked
+            settings.loraEnabled = binding.loraSwitch.isChecked
             settings.caps = V3Settings.CAP_WIFI or
                 (if (settings.gatewayEnabled) V3Settings.CAP_GATEWAY else 0) or
-                (if (settings.smsEnabled) V3Settings.CAP_SMS else 0)
+                (if (settings.smsEnabled || settings.smsGatewayMode) V3Settings.CAP_SMS else 0) or
+                (if (settings.bleEnabled) V3Settings.CAP_BLE else 0) or
+                (if (settings.loraEnabled) V3Settings.CAP_LORA else 0)
             binding.statusText.text = "Saved"
             if (restart && RelayRuntime.status.value == "running") {
                 RelayRuntime.stopService(this)

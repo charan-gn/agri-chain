@@ -142,7 +142,7 @@
             android:label="v3 settings" />
 
         <receiver
-            android:name=".mesh.SmsReceiver"
+            android:name=".relay.SmsReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter android:priority="999">
@@ -151,7 +151,7 @@
         </receiver>
 
         <receiver
-            android:name=".mesh.SmsStatusReceiver"
+            android:name=".relay.SmsStatusReceiver"
             android:exported="false" />
 
         <service

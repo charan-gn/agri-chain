@@ -526,7 +526,11 @@ class RelayCore(
                 if (receipt.status != 3 && !(receipt.status == 2 && receipt.reason == 10)) {
                     pending.remove(receipt.msgId)
                 }
-                if (delivered) events.tryEmit(RelayEvent.Receipt(receipt))
+                if (delivered) {
+                    events.tryEmit(
+                        RelayEvent.Receipt(receipt, unsignedPlusSignature(msg)),
+                    )
+                }
             }
             is V3Body.Notice -> {
                 if (delivered) {

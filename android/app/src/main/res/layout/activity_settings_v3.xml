@@ -210,6 +210,27 @@
                     android:layout_marginTop="6dp"
                     android:hint="SMS gateway phone number"
                     android:inputType="phone" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/smsGatewaySwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="This phone is the SMS gateway (AM1 + PRICE)" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/bleSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Bluetooth LE mesh" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/loraSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="LoRa via Meshtastic" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

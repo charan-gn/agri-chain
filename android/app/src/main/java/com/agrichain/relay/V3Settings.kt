@@ -53,6 +53,19 @@ class V3Settings(context: Context) {
         get() = prefs.getString(KEY_SMS_GATEWAY, "") ?: ""
         set(value) = prefs.edit().putString(KEY_SMS_GATEWAY, value.trim().take(24)).apply()
 
+    /** A phone with a SIM in gateway mode accepts AM1 envelopes and commands. */
+    var smsGatewayMode: Boolean
+        get() = prefs.getBoolean(KEY_SMS_GATEWAY_MODE, false)
+        set(value) = prefs.edit().putBoolean(KEY_SMS_GATEWAY_MODE, value).apply()
+
+    var bleEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BLE_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_BLE_ENABLED, value).apply()
+
+    var loraEnabled: Boolean
+        get() = prefs.getBoolean(KEY_LORA_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_LORA_ENABLED, value).apply()
+
     var registered: Boolean
         get() = prefs.getBoolean(KEY_REGISTERED, false)
         set(value) = prefs.edit().putBoolean(KEY_REGISTERED, value).apply()
@@ -92,6 +105,9 @@ class V3Settings(context: Context) {
         private const val KEY_TTL = "meshTtl"
         private const val KEY_SMS_ENABLED = "smsEnabled"
         private const val KEY_SMS_GATEWAY = "smsGateway"
+        private const val KEY_SMS_GATEWAY_MODE = "smsGatewayMode"
+        private const val KEY_BLE_ENABLED = "bleEnabled"
+        private const val KEY_LORA_ENABLED = "loraEnabled"
         private const val KEY_REGISTERED = "registered"
         private const val KEY_CAPS = "caps"
     }

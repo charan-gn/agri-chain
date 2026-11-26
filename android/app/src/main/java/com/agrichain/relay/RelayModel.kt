@@ -159,7 +159,11 @@ data class TransportSnapshot(
 )
 
 sealed interface RelayEvent {
-    data class Receipt(val receipt: ReceiptInfo) : RelayEvent
+    data class Receipt(
+        val receipt: ReceiptInfo,
+        /** Original signed RECEIPT bytes; used by the SMS gateway to reply. */
+        val raw: ByteArray? = null,
+    ) : RelayEvent
     data class Notice(val kind: Int, val refId: String, val seq: Long, val qtyKg: Long, val pricePaise: Long) : RelayEvent
     data class DirectedMessage(val type: V3Type, val msgId: String, val fromId: String, val raw: ByteArray) : RelayEvent
     data class Peer(val peer: PeerInfo) : RelayEvent

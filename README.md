@@ -2,7 +2,7 @@
 
 v3: one ledger main node orders independently signed messages. Phones sign LISTING, ORDER, BIND and box messages offline; the same signed bytes travel over Wi-Fi, Bluetooth, LoRa or GSM SMS until any gateway reaches the ledger. The ledger assigns seq numbers, signs RECEIPTs, NOTICEs and price tables, and gateways push them back out. There are no per-actor hash chains, so there are no forks or contiguity problems over SMS or LoRa.
 
-v2 (events, per-actor chains, chat halo) still runs until T38 removes it.
+The v2 `/events` ledger API and per-actor chains are removed; the legacy Android `mesh/` screens still need the T38 port to v3 messages.
 
 ## Task board
 
@@ -46,18 +46,18 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T32 | P3 ledger v3 market, orders, trades, prices, outbox | done | charan | task-T32-v3-market-e2e | ledger/v3_db.py, ledger/v3_ledger.py, ledger/v3_api.py, ledger/tests/test_v3_market.py, tools/e2e.py, README.md | T31 |
 | T33 | P4 relay core + JVM simulator | done | charan | task-T33-relay-core | APP/relay/, android/app/src/test/java/com/agrichain/relay/, android/app/build.gradle.kts, README.md | T30 |
 | T34 | P5 Android relay service, Wi-Fi transport, gateway loop, screens | done | charan | task-T34-android-relay | APP/relay/, APP/MainActivity.kt, AndroidManifest.xml, layouts, README.md | T31, T33 |
-| T35 | P6 SMS transport + SMS gateway + text commands | open | — | — | APP/relay/, APP/core/Permissions.kt, AndroidManifest.xml, ledger/ | T34 |
-| T36 | P7 Meshtastic LoRa gateway | open | — | — | gateway/, tools/, APP/relay/ | T34 |
-| T37 | P8 BLE GATT transport | open | — | — | APP/relay/, AndroidManifest.xml | T34 |
-| T38 | P9 port batch/box/barter; remove /events + mesh/ | open | — | — | android/, ledger/, contracts/, README.md | T31, T32, T34-T37 |
-| T39 | P10 custodial SMS agent (stretch) | open | — | — | gateway/, ledger/, README.md | T35 |
-| T40 | P11 hardening + demo | open | — | — | README.md, docs/, tools/ | all v3 |
+| T35 | P6 SMS transport + SMS gateway + text commands | done | charan | task-T35-sms | APP/relay/, APP/core/Permissions.kt, AndroidManifest.xml, ledger/ | T34 |
+| T36 | P7 Meshtastic LoRa gateway | done | charan | task-T35-sms | gateway/, APP/relay/, AndroidManifest.xml | T34 |
+| T37 | P8 BLE GATT transport | done | charan | task-T35-sms | APP/relay/, AndroidManifest.xml | T34 |
+| T38 | P9 port batch/box/barter; remove /events + mesh/ | claimed | charan | task-T35-sms | ledger/, webapp/, contracts/, android/ | T31, T32, T34-T37 |
+| T39 | P10 custodial SMS agent (stretch) | done | charan | task-T35-sms | gateway/, README.md | T35 |
+| T40 | P11 hardening + demo | claimed | charan | task-T35-sms | ledger/, webapp/, gateway/, README.md | all v3 |
 
 ## Contracts
 
 **v3 wire contract:** `contracts/MESSAGE_SPEC.md` with `crops.json`, `regions.json`, `price_bounds.json`, `vectors.json` and `contracts/ref/codec.py`. Message <= 198 bytes, envelope = ttl || message <= 199 bytes, msgId = first 12 bytes of SHA-256(bytes before signature), money is integer paise/kg, and every field is big-endian. The ledger is the only orderer; clients sign independently.
 
-**v2 is superseded** and stays readable only until T38 deletes `/events` and `mesh/`: `contracts/contract-v2.md` (per-actor chains, REST routes, D1-D11). v1 events remain readable.
+**v2 is removed from the ledger**: `/events`, the per-actor chain modules and their tests are deleted, and the web viewer proxies only `/v3` feeds. The old Android `mesh/` package and its screens are still pending the T38 port.
 
 - IDs: `batchId` UUIDv4; `actorId` `farmer:<uuid>` | `buyer:<uuid>` | `box:<uuid>`. Tokens are integer kg; `ts` is epoch ms; `lat`/`lon` are fixed 6-decimal strings or null; no floats.
 - Event: `{eventId,batchId,type,actorId,ts,lat,lon,data,prevHash,hash,sig}`. Types: `REGISTER | BIND | TRANSFER | GPS | TAMPER | DELIVER | BARTER`. `PRICE` is removed (`400 price_removed`).
@@ -65,7 +65,7 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 - Permissions: `REGISTER` farmer-only; `BIND`/`TRANSFER`/`BARTER` holder-only; `GPS`/`TAMPER` bound-box-only; `DELIVER` bound box or holder. The latest `BIND` authorizes the box for that batch.
 - Canonical bytes: UTF-8 JSON of the 9 signed fields, keys sorted A-Z at every level, `,`/`:` separators, no whitespace. Object keys are ASCII printable; string values are UTF-8 with raw non-ASCII and standard control escapes; integers are signed 64-bit and floats are rejected.
 - `hash` = lowercase SHA-256 hex of the canonical bytes; `sig` = base64 DER ECDSA P-256/SHA-256. `POST /actors` and `/admin/*` require `X-Admin-Token`; events are signature-authorized.
-- Mesh: one v3 envelope (`E` events, `A` signed ACK, `C` signed chat) over Wi-Fi NSD/TCP and BLE GATT (auto-selected by discovered peers), plus Nearby, SMS (binary AC3) and Meshtastic LoRa as backups; chat stays off the ledger/SMS/LoRa. Flood control uses clean-room ports of BitChat's TTL/jitter policy and bounded dedupe. Parity: `contracts/vectors.json` is the Python/Kotlin suite. Details: `docs/RELAY-BACKENDS.md`.
+- Mesh: one signed v3 envelope travels over Wi-Fi NSD/TCP, BLE GATT, SMS (`AM1:` framed) and Meshtastic LoRa (`LM1:` framed). Gateways post whole envelopes to `/v3/messages` and push signed receipts/notices back; TTL, dedupe and send caps are enforced by the relay core. Chat and the v2 `AC1`/`MC1` envelopes are removed. Parity: `contracts/vectors.json` is the Python/Kotlin suite. Details: `docs/RELAY-BACKENDS.md`.
 - Device checks D1-D11 are pending; quote `adb`/`logcat` output before marking one done.
 - v3 tasks use T29-T40 because T26-T28 were already used by the chat-era relay. Phase mapping is in `docs/GAP.md`.
 
@@ -133,6 +133,13 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-29 12:20] FROM charan → all: T33 done on task-T33-relay-core. Evidence: `testDebugUnitTest` **BUILD SUCCESSFUL**, 145 tests including the 10 new relay/gateway/simulator tests on JDK 21 via `-Dorg.gradle.java.home=C:\Program Files\Java\jdk-21.0.12`. The simulator proves 5-node flooding, 6-node dense-mesh send cap, price-table-once, duplicate suppression, gateway link loss/re-offer/receipt drain, SMS fallback and bad-ledger-signature drops. No phone, LoRa board or `adb` was available, so no device check is claimed; T34-T38 stay open. | done
 - [2026-11-26 18:01] FROM charan → all: T34 done on task-T34-android-relay. Adds the process-wide `RelayRuntime` + foreground `RelayService`, a Keystore-backed `V3Identity` (P-256, compressed pubkey, DER→raw r||s signing), `V3Settings`/`OrderStore`, `WifiTransport` (NSD `_agrimesh._tcp`, 14-byte UDP beacon on 47474, 4-byte length-prefix TCP with deterministic link election), and five screens (relay dashboard, market, orders, signed prices, settings) wired from `MainActivity`. The gateway loop from T33 now runs in the service so pending messages drain when the screen is off; relay state is persisted across restarts. Wire contract unchanged. Evidence: `JAVA_HOME=/tmp/opencode/jdk21 ./gradlew testDebugUnitTest` **BUILD SUCCESSFUL**, **153 tests, 0 failures, 0 errors, 0 skipped** (up from 145; 8 new `WifiProtocolTest` cases cover beacon round-trip/garbage, framing/ping/oversize, header actorId, lower-id link election, service-name round-trip and DER→raw signature length). No phone or `adb` was available, so no device check is claimed; phone Wi-Fi/NSD behaviour remains pending manual verification. | done
 
+- [2026-11-27 18:00] FROM charan → all: T35 done on task-T35-sms. Added the v3 SMS codec (`AM1:` framed, <=130-char chunks, <=6 parts), paced `SmsTransport`, `SmsReceiver`/`SmsStatusReceiver`, `SmsCommands` (`PRICE`/`LISTINGS`), settings toggles and JVM codec tests. No phone/SIM was attached, so real-SMS D-checks stay pending. | done
+- [2026-11-27 18:05] FROM charan → all: T36 done on task-T35-sms. Added `LM1:` Meshtastic framing (231-byte frames, 3 s gap), `LoRaTransport`/`LoRaV3Codec`, and the stdlib `gateway/lora_gateway.py` bridge with 7 passing Python tests. India region is 865-867 MHz. No LoRa board was attached, so the device check is pending. | done
+- [2026-11-27 18:10] FROM charan → all: T37 done on task-T35-sms. Added the 14-byte-header BLE GATT codec/transport, MTU-aware fragmentation, link-keyed reassembly, and JVM tests for out-of-order frames, bad magic/length and link mixups. No second phone was attached, so the BLE device check is pending. | done
+- [2026-11-27 18:15] FROM charan → all: T38 backend portion done on task-T35-sms: `/events` and the v2 ledger modules/tests are deleted, `webapp/` proxies only `/v3` feeds, and the public viewer now renders v3 messages/listings/orders/trades/prices. The Android `mesh/` package and batch/box/barter screens still need the v3 `RelayRuntime.originate` port, so T38 remains claimed, not done. | done
+- [2026-11-27 18:20] FROM charan → all: T39 done on task-T35-sms. `gateway/sms_agent.py` registers a phone + PIN once, derives a per-phone P-256 agent key with HKDF (no private keys stored), signs LISTING/ORDER messages, and serves a 160-character SMS bridge; 8 agent tests pass. | done
+- [2026-11-27 18:25] FROM charan → all: T40 hardening started on task-T35-sms: fixed the outbox regression where a recipient's later activity hid ORDER_RECEIVED/DELIVERED notices, added a `/v3` per-IP rate-limit middleware, and migrated the web viewer. Soak/demo runbook work remains, so T40 stays claimed. Evidence: `pytest ledger/tests gateway/tests -q` **66 passed**, `pytest webapp/tests -q` **5 passed**. | done
+
 ## Decisions log
 
 - 2026-11-23 charan: `android/` is one Kotlin app (XML views, single `MainActivity`) with farmer/buyer/box modes; `ledger/` is Python 3 FastAPI + SQLite; `demo/` holds scripts.
@@ -184,6 +191,13 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-29 charan: `GET /v3/prices?sinceVersion=N` returns price tables with `version > N` and **beacons with `version >= N`** so a gateway can re-inject its current beacon; a polling client must select the highest returned version instead of assuming element 0 is current. `tools/e2e.py` follows that rule and verifies the beacon hash, signatures, the checkpoint Merkle root and signed outbox items.
 - 2026-11-29 charan: correction to the T31 checkpoint note — the Merkle leaves are the ledger hashes in `seq` order (not sorted); odd levels promote the last node by repeating it. `v3c.merkle_root` is the single implementation and `tools/e2e.py` verifies the endpoint against it.
 - 2026-11-29 charan: T33 relay forwarding keeps the wire contract unchanged. Sparse links relay per-link and exclude the arrival link; a mesh with >=5 links switches to one transport-level broadcast per radio and caps ttl at 5, because the 10k/24h msgId LRU already absorbs the duplicates. Own pending uplinks are never evicted by the 500/72h cap and are re-offered to every new link. Log tag for the v3 relay is `AgriMesh`; private keys are never logged.
+
+- 2026-11-27 charan: T35 keeps SMS separate from the v2 `AC1` format: `AM1:<id6>:<i>/<n>:<base64url>`, <=130-char chunks, <=6 parts, 2 s between sends and a 20-part/min cap. Delivery receipts route back to `SmsStatusReceiver` and the raw receipt is kept on the relay receipt model for the settings UI.
+- 2026-11-27 charan: T36 uses `LM1:<id6>:<i>/<n>:<base64url>` for Meshtastic, capped at 231 bytes per packet with a 3 s gap. The laptop gateway posts whole envelopes to `/v3/messages` and writes `/v3/outbox/pull` items back as frames; regions must be IN (865-867 MHz).
+- 2026-11-27 charan: T37 BLE frames use a 14-byte header (`AB`, version, type, msgId4, index2, total2, length2`) and reassembly is keyed by link/peer id so frames from different links cannot be mixed.
+- 2026-11-27 charan: T39 is custodial but not key-exporting. `HKDF-SHA256(master, phone, "agri-chain-sms-agent-v1")` derives a deterministic P-256 scalar; PINs are PBKDF2-SHA256 hashes and a successful PIN opens a 15-minute session. Replies are <=160 characters so they fit one SMS.
+- 2026-11-27 charan: the v3 outbox is keyed only by its `id` cursor and 72-hour age. A recipient sending a later message must not hide earlier receipts/notices, so the old `last_sent` suppression was removed and the baseline market outbox assertion now passes.
+- 2026-11-27 charan: the v2 ledger API is removed rather than aliased. `ledger/app.py` now only installs `/v3`, `/health` and `/explorer`, with a per-IP `/v3` rate limit; old v2 modules, tests and contract-v2 artifacts are deleted. The Android `mesh/` deletion is the remaining T38 step.
 
 ## Blockers
 

@@ -533,20 +533,12 @@ class V3Db:
                     ORDER BY id ASC LIMIT 500""",
                 (*actor_list, int(after_id), int(now) - int(max_age)),
             ).fetchall()
-            last_sent: dict[str, int] = {}
-            for actor in actor_list:
-                row = conn.execute(
-                    "SELECT MAX(received_at) AS ts FROM v3_messages WHERE from_id = ?",
-                    (actor,),
-                ).fetchone()
-                last_sent[actor] = int(row["ts"] or 0)
-        # "Items stay re-pullable for 72 h unless the recipient has since sent
-        # any message" - skip stale items once the actor is active again.
-        return [
-            dict(row)
-            for row in rows
-            if int(row["created_at"]) >= last_sent.get(row["to_id"], 0)
-        ]
+        # Receipts and notices are per-message events, not chat history. Once
+        # queued they stay re-pullable for 72 h; the afterId cursor is what
+        # prevents duplicate delivery. Suppressing an item because its
+        # recipient later sent a message hid ORDER_RECEIVED/DELIVERED notices
+        # in an active trade, so gateways could not show the final state.
+        return [dict(row) for row in rows]
 
     def outbox_count(self, to_id: str | None = None) -> int:
         with self.connection() as conn:

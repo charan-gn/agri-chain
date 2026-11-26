@@ -1,0 +1,6 @@
+# The LoRa gateway uses only the Python standard library. Install pyserial
+# only when a physical Meshtastic radio is attached over USB serial.
+pyserial>=3.5
+
+# The custodial SMS agent signs v3 messages with P-256.
+cryptography>=42.0
