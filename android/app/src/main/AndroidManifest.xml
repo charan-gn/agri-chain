@@ -151,6 +151,15 @@
         </receiver>
 
         <receiver
+            android:name=".relay.SmsReceiverV3"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter android:priority="999">
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".mesh.SmsStatusReceiver"
             android:exported="false" />
 

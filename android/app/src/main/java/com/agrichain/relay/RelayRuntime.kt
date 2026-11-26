@@ -50,6 +50,14 @@ object RelayRuntime {
     var wifi: WifiTransport? = null
         private set
 
+    @Volatile
+    var sms: SmsTransport? = null
+        private set
+
+    @Volatile
+    var smsGateway: SmsGateway? = null
+        private set
+
     private lateinit var appContext: Context
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = mutableListOf<Job>()
@@ -112,6 +120,12 @@ object RelayRuntime {
         val wifiTransport = WifiTransport(appContext, signer)
         relay.attach(wifiTransport)
         wifi = wifiTransport
+
+        val client = HttpV3LedgerClient(baseUrl)
+        gatewayClient = client
+        if (settings.smsEnabled) {
+            attachSms(relay, client, settings)
+        }
         core = relay
 
         jobs += scope.launch {
@@ -119,12 +133,88 @@ object RelayRuntime {
                 .onFailure { Log.e(TAG, "relay: transport start failed: ${it.message}") }
         }
         jobs += scope.launch { tickLoop(relay) }
-        jobs += scope.launch { gatewayLoop(relay, baseUrl) }
+        jobs += scope.launch { gatewayLoop(relay, client) }
         jobs += scope.launch { eventLoop(relay) }
 
         _status.value = "running"
         Log.i(TAG, "relay: running as ${signer.actorHex} via $baseUrl")
         return null
+    }
+
+    /**
+     * SMS is the gateway/receipt leg, not a flooded mesh link. The transport
+     * chunks whole envelopes; the gateway maps msgId -> originating number so a
+     * ledger RECEIPT can travel back over GSM.
+     */
+    private fun attachSms(relay: RelayCore, client: V3LedgerClient, settings: V3Settings) {
+        val transport = SmsTransport(
+            context = appContext,
+            gatewayNumber = settings.smsGateway.takeIf { it.isNotBlank() },
+        )
+        relay.attach(transport)
+        sms = transport
+        relay.smsFallback = { number, envelope ->
+            transport.send(number, envelope) is SendResult.Sent
+        }
+        val gateway = SmsGateway(
+            priceCaches = { relay.priceCaches() },
+            listingCaches = { relay.listingCaches() },
+            priceFeed = { client.prices(0) },
+            listingFeed = { client.listings(0) },
+            sendEnvelope = { number, envelope -> transport.enqueueEnvelope(number, envelope) },
+            sendText = { number, text -> transport.enqueueText(number, text) },
+        )
+        relay.ledgerMessageHook = { raw -> gateway.onLedgerMessage(raw) }
+        smsGateway = gateway
+        for ((number, envelope) in SmsInboxV3.drain()) {
+            gateway.remember(envelope, number)
+            scope.launch {
+                runCatching { relay.onEnvelope(envelope, arrivalTransportId = "sms") }
+                    .onFailure { Log.w(TAG, "sms: buffered envelope failed: ${it.message}") }
+            }
+        }
+    }
+
+    /** Called by [SmsReceiverV3] for a reassembled `AM1` envelope. */
+    fun onSmsEnvelope(number: String, envelope: ByteArray) {
+        val relay = core
+        if (relay == null) {
+            SmsInboxV3.add(number, envelope)
+            Log.i(TAG, "sms: relay stopped, buffered ${envelope.size} bytes")
+            return
+        }
+        scope.launch {
+            smsGateway?.remember(envelope, number)
+            val outcome = runCatching {
+                relay.onEnvelope(envelope, arrivalTransportId = "sms")
+            }.getOrElse { error ->
+                Log.w(TAG, "sms: envelope failed: ${error.message}")
+                return@launch
+            }
+            Log.i(
+                TAG,
+                "sms: ${outcome.type} from ...${number.takeLast(4)} " +
+                    "fresh=${outcome.fresh}${outcome.droppedReason?.let { " ($it)" } ?: ""}",
+            )
+        }
+    }
+
+    /** Called by [SmsReceiverV3] for a plain-text PRICE/LISTINGS command. */
+    fun onSmsCommand(number: String, text: String) {
+        val gateway = smsGateway
+        if (gateway == null) {
+            Log.i(TAG, "sms: command ignored (SMS disabled)")
+            return
+        }
+        scope.launch {
+            val reply = runCatching { gateway.answer(number, text) }.getOrElse { error ->
+                Log.w(TAG, "sms: command failed: ${error.message}")
+                return@launch
+            }
+            if (reply != null) {
+                Log.i(TAG, "sms: reply to ...${number.takeLast(4)} (${reply.length} chars)")
+            }
+        }
     }
 
     @Synchronized
@@ -136,6 +226,8 @@ object RelayRuntime {
         scope.launch { runCatching { relay.stop() } }
         core = null
         wifi = null
+        sms = null
+        smsGateway = null
         gatewayClient = null
         _status.value = "stopped"
         Log.i(TAG, "relay: stopped")
@@ -201,9 +293,7 @@ object RelayRuntime {
         }
     }
 
-    private suspend fun gatewayLoop(relay: RelayCore, baseUrl: String) {
-        val client = HttpV3LedgerClient(baseUrl)
-        gatewayClient = client
+    private suspend fun gatewayLoop(relay: RelayCore, client: V3LedgerClient) {
         runCatching { GatewayLoop(relay, client).run() }
             .onFailure { Log.w(TAG, "relay: gateway loop stopped: ${it.message}") }
     }
