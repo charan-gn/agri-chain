@@ -4,12 +4,16 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Gravity
+import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.ArrayAdapter
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -19,25 +23,38 @@ import com.agrichain.data.ChatMessage
 import com.agrichain.databinding.ActivityMeshBinding
 import com.agrichain.ui.UiHelpers
 import com.google.android.material.button.MaterialButton
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
- * The Relay section. One start button turns on Wi-Fi NSD and BLE discovery;
- * the selector attaches whichever link finds a phone first and keeps watching
- * both radios. SMS, LoRa and the ledger gateway stay as backups.
+ * Simple relay chat: one name field, one shared conversation. Wi-Fi and BLE
+ * start automatically; the server acts as a halo hub so messages also reach
+ * phones that are not on the same local radio.
  */
 class MeshActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMeshBinding
     private lateinit var runtime: MeshRuntime
     private var running = false
-    private val recipientIds = mutableListOf<String>()
     private var contactsKey = ""
+    private var serverChat: List<ChatMessage> = emptyList()
+    private var serverOnline = false
+    private var fetchingServer = false
 
     private val handler = Handler(Looper.getMainLooper())
+    private val clock = SimpleDateFormat("HH:mm", Locale.getDefault())
     private val linkTick = object : Runnable {
         override fun run() {
             if (!isFinishing && !isDestroyed) updateRelayLink()
             handler.postDelayed(this, 2_000)
+        }
+    }
+
+    private val serverTick = object : Runnable {
+        override fun run() {
+            fetchServer()
+            handler.postDelayed(this, 4_000)
         }
     }
 
@@ -59,6 +76,8 @@ class MeshActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.backButton.setOnClickListener { finish() }
+        binding.status.setOnClickListener { ensurePermissions() }
+        binding.chatLinkStatus.setOnClickListener { ensurePermissions() }
         UiHelpers.wireToggle(binding.advancedHeader, binding.advancedBody, binding.advancedChevron)
 
         runtime = MeshRuntime.get(this)
@@ -77,10 +96,14 @@ class MeshActivity : AppCompatActivity() {
         binding.copyButton.setOnClickListener { copyPending() }
         binding.relayButton.setOnClickListener { relayPasted() }
         binding.chatNameInput.setText(runtime.userName)
-        binding.saveChatNameButton.setOnClickListener {
-            runtime.setUserName(binding.chatNameInput.text?.toString().orEmpty())
-            refreshContacts(force = true)
-            log("Your name is now ${runtime.userName}")
+        binding.saveChatNameButton.setOnClickListener { saveName() }
+        binding.chatNameInput.setOnEditorActionListener { _, action, _ ->
+            if (action == EditorInfo.IME_ACTION_DONE) {
+                saveName()
+                true
+            } else {
+                false
+            }
         }
         binding.chatSendButton.setOnClickListener { sendChat() }
         binding.chatInput.setOnEditorActionListener { _, action, _ ->
@@ -95,11 +118,14 @@ class MeshActivity : AppCompatActivity() {
         refreshContacts(force = true)
 
         running = runtime.relayStatus().running
+        if (!running && Permissions.missingMesh(this).isEmpty()) {
+            startRelay()
+        } else if (running) {
+            runtime.announceUser(force = true)
+        }
         updateRelayLink()
         refreshPending()
-        if (intent?.getBooleanExtra("autoStart", false) == true && !running) {
-            binding.root.post { ensurePermissions() }
-        }
+        binding.root.post { fetchServer() }
     }
 
     override fun onResume() {
@@ -110,15 +136,20 @@ class MeshActivity : AppCompatActivity() {
         refreshContacts()
         renderChat()
         handler.removeCallbacks(linkTick)
+        handler.removeCallbacks(serverTick)
         handler.post(linkTick)
+        handler.post(serverTick)
     }
 
     override fun onPause() {
         handler.removeCallbacks(linkTick)
+        handler.removeCallbacks(serverTick)
         super.onPause()
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(linkTick)
+        handler.removeCallbacks(serverTick)
         runtime.logSink = null
         runtime.chatListener = null
         super.onDestroy()
@@ -138,6 +169,7 @@ class MeshActivity : AppCompatActivity() {
         runtime.startRelay()
         running = true
         runtime.announceUser(force = true)
+        binding.chatNameInput.setText(runtime.userName)
         Log.i(TAG, "relay: started ${runtime.relayStatus().mode.name.lowercase()} discovery")
         updateRelayLink()
         Thread {
@@ -160,6 +192,19 @@ class MeshActivity : AppCompatActivity() {
     private fun setMode(mode: RelayLinkMode) {
         runtime.setRelayMode(mode)
         updateRelayLink()
+    }
+
+    private fun saveName() {
+        val name = binding.chatNameInput.text?.toString()?.trim().orEmpty()
+        if (name.isEmpty()) {
+            log("Enter a name first")
+            return
+        }
+        runtime.setUserName(name)
+        binding.chatNameInput.setText(runtime.userName)
+        refreshContacts(force = true)
+        updateRelayLink()
+        log("Your name is now ${runtime.userName}")
     }
 
     private fun saveGateway() {
@@ -229,19 +274,18 @@ class MeshActivity : AppCompatActivity() {
     private fun sendChat() {
         val text = binding.chatInput.text?.toString()?.trim().orEmpty()
         if (text.isEmpty()) return
-        val position = binding.chatRecipientSpinner.selectedItemPosition
-        val recipient = recipientIds.getOrNull(position - 1)
-        val message = runtime.sendChat(text, recipient)
+        val message = runtime.sendChat(text)
         if (message == null) {
             log("Chat needs the mesh signing key")
         } else {
             binding.chatInput.text?.clear()
             appendChat(message)
             updateRelayLink()
+            handler.postDelayed({ fetchServer() }, 900)
         }
     }
 
-    /** Builds the recipient list from phones seen on the radio and named peers. */
+    /** Refreshes the visible roster from phones seen on either radio and names. */
     private fun refreshContacts(force: Boolean = false) {
         val peers = runtime.discoveredPeers()
         for (peer in peers) {
@@ -255,48 +299,126 @@ class MeshActivity : AppCompatActivity() {
         contactsKey = key
         runtime.contacts.markSeen(peers)
 
-        recipientIds.clear()
-        val labels = mutableListOf("Broadcast to all")
-        contacts
-            .filter { it.userId != runtime.selfId }
-            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
-            .forEach { contact ->
-                recipientIds += contact.userId
-                labels += contact.name
-            }
-
-        val selected = binding.chatRecipientSpinner.selectedItemPosition.coerceAtLeast(0)
-        binding.chatRecipientSpinner.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            labels,
-        )
-        if (selected < labels.size) binding.chatRecipientSpinner.setSelection(selected)
-
         binding.contactsText.text = if (contacts.isEmpty()) {
-            "Contacts: none yet — share your name from the Relay section"
+            "Everyone: no one seen yet — save your name to announce it"
         } else {
-            "Contacts: " + contacts.sortedBy { it.name }.joinToString(", ") { contact ->
+            "Everyone: " + contacts.sortedBy { it.name }.joinToString(", ") { contact ->
                 if (contact.userId == runtime.selfId) "${contact.name} (you)" else contact.name
             }
         }
     }
 
+    /** Merges local mesh chat with the server halo feed; envelopeId wins once. */
     private fun renderChat() {
-        binding.chatMessages.text = ""
-        runtime.chatMessages().forEach { appendChat(it) }
-        binding.chatScroll.post { binding.chatScroll.fullScroll(android.view.View.FOCUS_DOWN) }
+        val merged = LinkedHashMap<String, ChatMessage>()
+        runtime.chatMessages().forEach { merged[it.envelopeId] = it }
+        serverChat.forEach { merged.putIfAbsent(it.envelopeId, it) }
+        val ordered = merged.values.sortedBy { it.ts }
+        binding.chatList.removeAllViews()
+        if (ordered.isEmpty()) {
+            binding.chatList.addView(emptyState())
+        } else {
+            ordered.forEach { addBubble(it) }
+        }
+        scrollToBottom()
     }
 
     private fun appendChat(message: ChatMessage) {
-        val label = if (message.outgoing) {
+        binding.chatList.addView(bubbleRow(message))
+        scrollToBottom()
+    }
+
+    private fun addBubble(message: ChatMessage) {
+        binding.chatList.addView(bubbleRow(message))
+    }
+
+    private fun bubbleRow(message: ChatMessage): View {
+        val outgoing = message.outgoing
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = if (outgoing) Gravity.END else Gravity.START
+        }
+        val label = if (outgoing) {
             "You"
         } else {
-            runtime.contacts.nameOf(message.senderId) ?: message.senderId.take(12)
+            runtime.contacts.nameOf(message.senderId)?.takeIf { it.isNotBlank() }
+                ?: "Phone ${message.senderId.takeLast(6).ifBlank { "unknown" }}"
         }
-        val line = "$label  ${message.body}"
-        binding.chatMessages.append(if (binding.chatMessages.text.isEmpty()) line else "\n$line")
-        binding.chatScroll.post { binding.chatScroll.fullScroll(android.view.View.FOCUS_DOWN) }
+        val halo = if (message.status == "server" && !outgoing) " · halo" else ""
+        val meta = TextView(this).apply {
+            text = "$label$halo · ${clock.format(Date(message.ts))}"
+            textSize = 11f
+            setTextColor(ContextCompat.getColor(this@MeshActivity, R.color.text_secondary))
+            setPadding(dp(4), 0, dp(4), dp(3))
+        }
+        val bubble = TextView(this).apply {
+            text = message.body
+            textSize = 16f
+            setTextColor(
+                if (outgoing) Color.WHITE
+                else ContextCompat.getColor(this@MeshActivity, R.color.text_primary)
+            )
+            setBackgroundResource(if (outgoing) R.drawable.bg_bubble_out else R.drawable.bg_bubble_in)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
+            setTextIsSelectable(true)
+        }
+        column.addView(meta)
+        column.addView(bubble)
+        if (outgoing) {
+            column.addView(
+                TextView(this).apply {
+                    text = if (message.status == "waiting") "waiting for the halo or a nearby phone" else "sent"
+                    textSize = 11f
+                    setTextColor(
+                        ContextCompat.getColor(
+                            this@MeshActivity,
+                            if (message.status == "waiting") R.color.status_warn else R.color.status_ok,
+                        )
+                    )
+                    setPadding(dp(4), dp(3), dp(4), 0)
+                },
+            )
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = if (outgoing) Gravity.END else Gravity.START
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(6) }
+            addView(column)
+        }
+    }
+
+    private fun emptyState(): View = TextView(this).apply {
+        text = "No messages yet.\nSay hello to the mesh."
+        textSize = 15f
+        gravity = Gravity.CENTER
+        setTextColor(ContextCompat.getColor(this@MeshActivity, R.color.text_secondary))
+        setPadding(0, dp(48), 0, dp(24))
+    }
+
+    private fun scrollToBottom() {
+        binding.chatScroll.post { binding.chatScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun fetchServer() {
+        if (fetchingServer) return
+        fetchingServer = true
+        Thread {
+            val messages = runtime.serverChat()
+            val online = runtime.ledgerReachable()
+            ui {
+                fetchingServer = false
+                serverChat = messages
+                serverOnline = online
+                renderChat()
+                updateRelayLink()
+            }
+        }.start()
     }
 
     private fun updateRelayLink() {
@@ -314,16 +436,19 @@ class MeshActivity : AppCompatActivity() {
             RelayLinkMode.WIFI -> "Wi-Fi only. Phones must share the same local network."
             RelayLinkMode.BLE -> "Bluetooth only. No local network needed."
         }
-        binding.chatLinkStatus.text = when {
-            !status.running -> "Start the relay to chat."
-            active == "none" -> "Searching for a phone — chat will queue."
-            else -> "Chat over $active · messages sign with your mesh key."
+        val peers = status.wifiPeers + status.blePeers
+        val radio = when {
+            !status.running -> "Radio off · tap to start"
+            active == "none" -> "Scanning Wi-Fi + Bluetooth…"
+            else -> "$peers nearby · $active"
         }
+        binding.chatLinkStatus.text =
+            "$radio · halo ${if (serverOnline) "online" else "offline"}"
         if (status.running && status.active != null) {
             runtime.announceUser()
             refreshContacts()
         }
-        binding.status.text = if (status.running) "Relay ON · $active" else "Relay is off"
+        binding.status.text = if (status.running) "Relay ON · $active" else "Relay off · tap to start"
         binding.status.setTextColor(
             getColor(if (status.running) R.color.status_ok else R.color.status_neutral)
         )

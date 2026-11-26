@@ -35,24 +35,35 @@ announces that name with an unsigned `USER` envelope (`MeshKind.USER`, wire key
 active. `RelayContacts` keeps the last 40-character name seen for each phone id;
 names are UI labels, not ledger actors or identity claims.
 
-The Relay section shows a **Contacts** list and a recipient picker. Every chat
-is still signed, but `MeshEnvelope.recipientId` makes it addressable:
+The Relay section is deliberately one screen: a name field, the roster of
+phones seen, one shared conversation, and a message box. The main chat is
+broadcast-only, so every node and the halo see the same thread. Every chat is
+still signed; the engine keeps `MeshEnvelope.recipientId` for future direct
+messages (`null` broadcasts, a phone id is displayed only by that phone but is
+still flooded onward). No recipient picker is shown, so the main send can never
+be silently redirected.
 
-- `null` → broadcast; every receiving phone displays it.
-- a phone id → only that phone displays it, but the envelope is still flooded
-  onward so it can travel through intermediate phones.
+`MeshActivity` merges two sources by `envelopeId`:
 
-Relay hops skip the link the envelope arrived on. `sendChat(text, recipientId)`
-and `MeshActivity`'s spinner provide the sender side.
+- the local `ChatStore` (radio messages this phone saw or sent);
+- the **halo feed** from `GET /relay/messages`, which carries messages that
+  server-connected phones mirrored from anywhere.
+
+The halo is the ledger acting as a hub, not a signed actor. A phone with no
+local peer can still send through it; a phone with no internet still chats over
+Wi-Fi/BLE and flushes later. The status line reports `halo online/offline` next
+to the radio peer count. Names from the feed are folded back into
+`RelayContacts`, and a bubble learned from the feed is labelled `· halo`.
 
 Chat is mirrored to the ledger server as *monitor data*, never as a signed
 `CHAT` event. `MeshRuntime.mirrorChat()` and `mirrorUser()` POST to
 `POST /relay/messages` and `POST /relay/users`, deduped on `envelopeId` /
-`userId`. The dashboard polls `GET /relay/messages` and renders a Relay messages
-panel with discovered users, sender → recipient, body, link and direction.
-The supply-chain event contract (`REGISTER`, `BIND`, `TRANSFER`, `GPS`,
-`TAMPER`, `DELIVER`, `BARTER`) is unchanged; relay rows cannot affect batch
-verification.
+`userId`. Waiting messages keep their envelope id and timestamp when they are
+re-signed on flush, so one message remains one row in the feed. The dashboard
+polls `GET /relay/messages` and renders a Relay messages panel with discovered
+users, sender → recipient, body, link and direction. The supply-chain event
+contract (`REGISTER`, `BIND`, `TRANSFER`, `GPS`, `TAMPER`, `DELIVER`, `BARTER`)
+is unchanged; relay rows cannot affect batch verification.
 
 The Crop Box screen no longer has a "Turn Guard ON" step. GPS logging and
 signed `TAMPER` events remain available; arming was a manual step users skipped.

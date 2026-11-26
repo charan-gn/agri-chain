@@ -1,6 +1,7 @@
 package com.agrichain.mesh
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -45,7 +46,13 @@ import java.util.UUID
  *
  * This is a clean-room implementation, not BitChat wire compatibility: BitChat
  * packets are a different binary format and use Noise sessions.
+ *
+ * The relay requests BLUETOOTH_SCAN/ADVERTISE/CONNECT before starting this
+ * transport. Lint cannot see that runtime grant, so the class-level
+ * suppression is intentional; calls still use availability checks and
+ * runCatching where the platform may throw after a grant is revoked.
  */
+@SuppressLint("MissingPermission")
 class BleMeshTransport(
     private val context: Context?,
     private val identity: String = "agri",

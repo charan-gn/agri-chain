@@ -208,11 +208,23 @@ class RelayEngine(
 
     /** Signs and sends a chat message; null recipient means broadcast. */
     @Synchronized
-    fun sendChat(text: String, recipientId: String? = null): ChatSendResult? {
+    fun sendChat(
+        text: String,
+        recipientId: String? = null,
+        envelopeId: String = MeshEnvelope.shortId(),
+        sentAt: Long = System.currentTimeMillis(),
+    ): ChatSendResult? {
         val body = text.trim()
         if (body.isEmpty() || body.length > MeshEnvelope.MAX_CHAT_CHARS) return null
         val chatSigner = signer ?: return null
-        val envelope = MeshEnvelope.chat(selfId, body, chatSigner, recipientId = recipientId)
+        val envelope = MeshEnvelope.chat(
+            selfId,
+            body,
+            chatSigner,
+            recipientId = recipientId,
+            envelopeId = envelopeId,
+            sentAt = sentAt,
+        )
         rememberEnvelope(envelope.envelopeId)
         val sent = forward(envelope, allowedTransportIds = CHAT_TRANSPORTS)
         log("chat sent ${recipientId?.let { "to $it" } ?: "to all"} on $sent link(s)")

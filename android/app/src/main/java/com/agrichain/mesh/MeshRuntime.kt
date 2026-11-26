@@ -234,12 +234,8 @@ class MeshRuntime private constructor(context: Context) {
         mirrorUser(envelope.sentAt)
     }
 
-    /** Phone ids currently visible on the active radio, for the recipient picker. */
-    fun discoveredPeers(): Set<String> = when (relay.status().active) {
-        RelayLinkId.WIFI -> wifi.knownPeers() - selfId
-        RelayLinkId.BLE -> ble.knownPeers() - selfId
-        null -> emptySet()
-    }
+    /** Phone ids visible on either local radio, so contacts include the whole mesh. */
+    fun discoveredPeers(): Set<String> = (wifi.knownPeers() + ble.knownPeers()) - selfId
 
     /** Stores a local chat message and sends it to a contact, or broadcasts it. */
     fun sendChat(text: String, recipientId: String? = null): ChatMessage? {
@@ -261,9 +257,46 @@ class MeshRuntime private constructor(context: Context) {
     fun chatMessages(limit: Int = 200): List<ChatMessage> = chatStore.recent(limit)
 
     /**
-     * Re-signs and sends chat messages that were written while no BLE peer was
-     * connected. The row keeps its position but adopts the new envelope id, so
-     * relayed copies still dedupe by id.
+     * Halo feed: messages posted by server-connected phones, merged with the
+     * names those phones announced. The server is a hub, not a signed actor.
+     */
+    fun serverChat(limit: Int = 100): List<ChatMessage> = runCatching {
+        val feed = LedgerApi(LedgerSettings.baseUrl(app)).relayFeed(limit)
+            ?: return@runCatching emptyList()
+        feed.optJSONArray("users")?.let { users ->
+            for (i in 0 until users.length()) {
+                val row = users.optJSONObject(i) ?: continue
+                val id = row.optString("userId")
+                val name = row.optString("name")
+                if (id.isNotEmpty() && name.isNotEmpty()) {
+                    contacts.put(id, name, row.optLong("lastSeen"))
+                }
+            }
+        }
+        val messages = feed.optJSONArray("messages") ?: return@runCatching emptyList()
+        (0 until messages.length()).mapNotNull { i ->
+            val row = messages.optJSONObject(i) ?: return@mapNotNull null
+            val id = row.optString("envelopeId")
+            val body = row.optString("body")
+            val sender = row.optString("senderId")
+            if (id.isEmpty() || body.isEmpty() || sender.isEmpty()) return@mapNotNull null
+            val senderName = row.optString("senderName")
+            if (senderName.isNotEmpty()) contacts.put(sender, senderName, row.optLong("ts"))
+            ChatMessage(
+                envelopeId = id,
+                senderId = sender,
+                body = body,
+                ts = row.optLong("ts"),
+                outgoing = sender == selfId,
+                status = "server",
+            )
+        }.sortedBy { it.ts }
+    }.getOrDefault(emptyList())
+
+    /**
+     * Re-signs and sends chat messages that were written while no radio peer
+     * was connected. The envelope id and timestamp are kept, so the halo feed
+     * and every phone still dedupe one message as one row.
      */
     fun flushChatOutbox(): Int {
         val status = relay.status()
@@ -275,9 +308,15 @@ class MeshRuntime private constructor(context: Context) {
         if (peers == 0) return 0
         var sent = 0
         for (pending in chatStore.outbox()) {
-            val result = engine.sendChat(pending.body) ?: continue
+            // Re-sign the same id/timestamp so the halo feed keeps one row.
+            val result = engine.sendChat(
+                pending.body,
+                envelopeId = pending.envelopeId,
+                sentAt = pending.ts,
+            ) ?: continue
             if (result.links <= 0) continue
             if (chatStore.replaceEnvelope(pending.envelopeId, result.envelope.envelopeId, "sent")) {
+                mirrorChat(result.envelope, outgoing = true)
                 sent++
             }
         }

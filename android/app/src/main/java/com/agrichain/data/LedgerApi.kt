@@ -82,6 +82,10 @@ class LedgerApi(private val baseUrl: String) {
         request("POST", "/relay/messages", JSONObject().put("messages", JSONArray(messages)))
     }
 
+    /** Halo feed: all relay messages and names observed by server-connected phones. */
+    fun relayFeed(limit: Int = 100): JSONObject? =
+        request("GET", "/relay/messages?limit=$limit", null)
+
     private fun request(
         method: String,
         path: String,

@@ -190,14 +190,16 @@ data class MeshEnvelope(
             signer: PublicKeySigner,
             ttl: Int = DEFAULT_TTL,
             recipientId: String? = null,
+            envelopeId: String = shortId(),
+            sentAt: Long = System.currentTimeMillis(),
         ): MeshEnvelope {
             val body = text.trim().take(MAX_CHAT_CHARS)
             require(body.isNotEmpty()) { "Chat message is empty" }
             val unsigned = MeshEnvelope(
                 kind = MeshKind.CHAT,
-                envelopeId = shortId(),
+                envelopeId = envelopeId,
                 senderId = senderId,
-                sentAt = System.currentTimeMillis(),
+                sentAt = sentAt,
                 ttl = ttl,
                 chatText = body,
                 recipientId = recipientId?.takeIf { it.isNotBlank() },
