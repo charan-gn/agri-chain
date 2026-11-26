@@ -1,6 +1,7 @@
 package com.agrichain.data
 
 import com.agrichain.core.Event
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -67,6 +68,18 @@ class LedgerApi(private val baseUrl: String) {
         val json = request("POST", "/events", event.toJsonObject())
             ?: throw LedgerException(500, "empty_response", "ledger returned no body", null)
         return json.getString("head")
+    }
+
+    /** Mirrors relay chat into a separate dashboard feed; never a signed event. */
+    fun postRelayUsers(users: List<JSONObject>) {
+        if (users.isEmpty()) return
+        request("POST", "/relay/users", JSONObject().put("users", JSONArray(users)))
+    }
+
+    /** Mirrors relay chat into a separate dashboard feed; never a signed event. */
+    fun postRelayMessages(messages: List<JSONObject>) {
+        if (messages.isEmpty()) return
+        request("POST", "/relay/messages", JSONObject().put("messages", JSONArray(messages)))
     }
 
     private fun request(

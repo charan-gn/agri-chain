@@ -38,6 +38,9 @@ interface Transport {
      */
     fun peers(envelope: MeshEnvelope): Set<String> = emptySet()
 
+    /** Peer ids currently known to this link, for the contact picker. */
+    fun knownPeers(): Set<String> = emptySet()
+
     /** Event ids that [send] will actually hand over (SMS drops GPS and batches). */
     fun carriedEventIds(envelope: MeshEnvelope): Set<String> =
         envelope.events.mapTo(mutableSetOf()) { it.eventId }

@@ -166,6 +166,35 @@ class MeshEnvelopeTest {
     }
 
     @Test
+    fun `directed chat carries a signed recipient`() {
+        val chat = MeshEnvelope.chat(
+            "phone-a",
+            "for phone-b",
+            TestSigners.create("mesh:A"),
+            recipientId = "phone-b",
+        )
+
+        val parsed = MeshEnvelope.parse(chat.encode())
+
+        assertEquals(MeshKind.CHAT, parsed?.kind)
+        assertEquals("phone-b", parsed?.recipientId)
+        assertTrue(parsed?.verifyChat() == true)
+        assertTrue(MeshEnvelope.fromJson(chat.toJson().put("r", "phone-c"))?.verifyChat() == false)
+    }
+
+    @Test
+    fun `user announcement round trips and caps the name`() {
+        val user = MeshEnvelope.user("phone-a", "  Ramesh  ")
+
+        val parsed = MeshEnvelope.parse(user.encode())
+
+        assertEquals(MeshKind.USER, parsed?.kind)
+        assertEquals("Ramesh", parsed?.senderName)
+        assertNull(parsed?.chatText)
+        assertEquals(40, MeshEnvelope.user("phone-a", "x".repeat(90)).senderName?.length)
+    }
+
+    @Test
     fun `tampered chat does not verify`() {
         val chat = MeshEnvelope.chat("phone-a", "hello", TestSigners.create("mesh:A"))
         val json = chat.toJson().put("c", "tampered")

@@ -86,6 +86,72 @@ class ChatRelayTest {
     }
 
     @Test
+    fun `directed chat is hidden from other phones but still floods onward`() {
+        val radio = FakeTransport("wifi")
+        val received = mutableListOf<MeshEnvelope>()
+        val engine = RelayEngine(
+            "phone-b",
+            Store(),
+            ledger = null,
+            transports = mutableListOf(radio),
+            chatListener = { received += it },
+        )
+        val chat = MeshEnvelope.chat(
+            "phone-a",
+            "private note",
+            TestSigners.create("mesh:A"),
+            recipientId = "phone-c",
+        )
+
+        engine.receive(chat, fromTransportId = "wifi", fromPeerId = "wifi-a")
+
+        assertTrue(received.isEmpty())
+        assertEquals(1, radio.sent.size)
+        assertEquals("phone-c", radio.sent.single().recipientId)
+    }
+
+    @Test
+    fun `user announcement is reported and forwarded on the local link`() {
+        val radio = FakeTransport("ble")
+        val users = mutableListOf<MeshEnvelope>()
+        val engine = RelayEngine(
+            "phone-b",
+            Store(),
+            ledger = null,
+            transports = mutableListOf(radio),
+            userListener = { users += it },
+        )
+
+        engine.receive(
+            MeshEnvelope.user("phone-a", "Ramesh"),
+            fromTransportId = "ble",
+            fromPeerId = "ble-a",
+        )
+
+        assertEquals(1, users.size)
+        assertEquals("Ramesh", users[0].senderName)
+        assertEquals(MeshKind.USER, radio.sent.single().kind)
+    }
+
+    @Test
+    fun `signed chat can use the wifi link`() {
+        val wifi = FakeTransport("wifi")
+        val engine = RelayEngine(
+            "phone-a",
+            Store(),
+            ledger = null,
+            transports = mutableListOf(wifi),
+            signer = TestSigners.create("mesh:A"),
+        )
+
+        val result = engine.sendChat("over wi-fi")
+
+        assertEquals(1, result?.links)
+        assertEquals(1, wifi.sent.size)
+        assertEquals("over wi-fi", wifi.sent.single().chatText)
+    }
+
+    @Test
     fun `unsigned chat is dropped`() {
         val radio = FakeTransport("ble")
         val received = mutableListOf<MeshEnvelope>()

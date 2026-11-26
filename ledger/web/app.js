@@ -147,6 +147,34 @@ function renderFeed(events) {
   $("#feedEmpty").classList.toggle("hidden", events.length > 0);
 }
 
+function renderRelay(body) {
+  const users = body.users || [];
+  const messages = body.messages || [];
+  const names = new Map(users.map((user) => [user.userId, user.name]));
+  $("#relayUsersLabel").textContent = users.length
+    ? `${users.length} user${users.length === 1 ? "" : "s"} discovered`
+    : "no users yet";
+  $("#relayUsers").innerHTML = users.map((user) => `
+    <li><b>${esc(user.name)}</b> · ${esc(short(user.userId, 10))} · ${fmtTime(user.lastSeen)}</li>
+  `).join("");
+  $("#relayFeed").innerHTML = messages.map((message) => {
+    const sender = message.senderName || names.get(message.senderId) || short(message.senderId, 10);
+    const target = message.recipientId
+      ? (message.recipientName || names.get(message.recipientId) || short(message.recipientId, 10))
+      : "everyone";
+    return `
+    <li>
+      <span class="badge info">${message.direction === "out" ? "sent" : "seen"}</span>
+      <span class="event-main">
+        <strong>${esc(sender)} → ${esc(target)}</strong>
+        <span>${esc(message.body)} · ${esc(message.link || "local")}</span>
+      </span>
+      <time datetime="${esc(new Date(message.ts).toISOString())}">${fmtTime(message.ts)}</time>
+    </li>`;
+  }).join("");
+  $("#relayEmpty").classList.toggle("hidden", messages.length > 0);
+}
+
 function renderOffers(offers) {
   const byBatch = new Map(state.batches.map((batch) => [batch.batchId, batch]));
   const label = (batchId) => {
@@ -303,10 +331,11 @@ async function refresh() {
   const button = $("#refreshButton");
   button.disabled = true;
   try {
-    const [stats, batchBody, offerBody, ...priceBodies] = await Promise.all([
+    const [stats, batchBody, offerBody, relayBody, ...priceBodies] = await Promise.all([
       get("/stats?limit=14"),
       get("/batches"),
       get("/barter/offers"),
+      get("/relay/messages"),
       ...PRICE_CROPS.map((crop) =>
         get(`/trades?crop=${encodeURIComponent(crop)}`).catch(() => null),
       ),
@@ -316,6 +345,7 @@ async function refresh() {
     renderBatches(state.batches);
     renderFeed(stats.recent || []);
     renderOffers(offerBody.offers || []);
+    renderRelay(relayBody);
     renderTokenPrices(priceBodies.filter(Boolean));
     setHealth(true);
     hideBanner();

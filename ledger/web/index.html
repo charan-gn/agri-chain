@@ -134,6 +134,22 @@
         <p class="empty hidden" id="priceEmpty">No priced transfers yet.</p>
       </div>
     </section>
+
+    <section class="panel relay-panel">
+      <div class="panel-head">
+        <h2>Relay messages</h2>
+        <span class="muted" id="relayUsersLabel">no users yet</span>
+      </div>
+      <p class="muted small">
+        Phone-to-phone chat observed by the relay. These are monitor rows, not signed
+        ledger events, and they never affect batch verification.
+      </p>
+      <ul class="user-chips" id="relayUsers"></ul>
+      <ol class="feed relay-feed" id="relayFeed"></ol>
+      <p class="empty hidden" id="relayEmpty">
+        No relayed messages yet. Open Relay on a phone, set a display name, and send a chat.
+      </p>
+    </section>
   </main>
 
   <footer>

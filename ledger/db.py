@@ -34,6 +34,32 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_events_batch_seq ON events(batch_id, seq);
 CREATE INDEX IF NOT EXISTS idx_events_batch_prev ON events(batch_id, prev_hash);
+
+-- Relay monitor data. These rows are observations, not signed ledger events,
+-- so they live outside the event chain and cannot affect batch verification.
+CREATE TABLE IF NOT EXISTS relay_users (
+    user_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    last_seen INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS relay_messages (
+    envelope_id TEXT PRIMARY KEY,
+    sender_id TEXT NOT NULL,
+    sender_name TEXT NOT NULL,
+    recipient_id TEXT,
+    recipient_name TEXT NOT NULL,
+    body TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    observer_id TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    link TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_relay_messages_ts ON relay_messages(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_relay_messages_pair ON relay_messages(sender_id, recipient_id);
 """
 
 
@@ -321,3 +347,95 @@ class LedgerDb:
         with self.connection() as conn:
             rows = conn.execute("SELECT hash FROM events ORDER BY seq").fetchall()
         return [row["hash"] for row in rows]
+
+    def upsert_relay_users(self, users: list[dict], now: int) -> int:
+        if not users:
+            return 0
+        with self.connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO relay_users (user_id, name, last_seen, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    name = excluded.name,
+                    last_seen = MAX(relay_users.last_seen, excluded.last_seen)
+                """,
+                [
+                    (user["userId"], user["name"], user["ts"], now)
+                    for user in users
+                ],
+            )
+        return len(users)
+
+    def insert_relay_messages(self, messages: list[dict], now: int) -> int:
+        if not messages:
+            return 0
+        with self.connection() as conn:
+            before = conn.total_changes
+            conn.executemany(
+                """
+                INSERT OR IGNORE INTO relay_messages (
+                    envelope_id, sender_id, sender_name, recipient_id,
+                    recipient_name, body, ts, observer_id, direction, link,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        message["envelopeId"],
+                        message["senderId"],
+                        message["senderName"],
+                        message.get("recipientId"),
+                        message.get("recipientName", ""),
+                        message["body"],
+                        message["ts"],
+                        message["observerId"],
+                        message["direction"],
+                        message.get("link", ""),
+                        now,
+                    )
+                    for message in messages
+                ],
+            )
+            return conn.total_changes - before
+
+    def relay_users(self) -> list[dict]:
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT user_id, name, last_seen
+                FROM relay_users ORDER BY name COLLATE NOCASE, user_id
+                """
+            ).fetchall()
+        return [
+            {
+                "userId": row["user_id"],
+                "name": row["name"],
+                "lastSeen": int(row["last_seen"]),
+            }
+            for row in rows
+        ]
+
+    def relay_messages(self, limit: int) -> list[dict]:
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM relay_messages ORDER BY ts DESC, created_at DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "envelopeId": row["envelope_id"],
+                "senderId": row["sender_id"],
+                "senderName": row["sender_name"],
+                "recipientId": row["recipient_id"],
+                "recipientName": row["recipient_name"],
+                "body": row["body"],
+                "ts": int(row["ts"]),
+                "observerId": row["observer_id"],
+                "direction": row["direction"],
+                "link": row["link"],
+            }
+            for row in rows
+        ]

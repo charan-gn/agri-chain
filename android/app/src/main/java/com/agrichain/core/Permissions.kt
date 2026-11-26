@@ -38,7 +38,7 @@ object Permissions {
         }
     }
 
-    /** Minimum set for the BLE chat mesh; SMS, camera and box GPS are not needed. */
+    /** Minimum set for the BLE + Wi-Fi relay; SMS, camera and box GPS are not needed. */
     fun mesh(): List<Need> = buildList {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             add(Need(Manifest.permission.BLUETOOTH_SCAN, "Bluetooth scan (chat mesh)"))
@@ -47,6 +47,9 @@ object Permissions {
         } else {
             add(Need(Manifest.permission.ACCESS_FINE_LOCATION, "Location (BLE scan)"))
             add(Need(Manifest.permission.ACCESS_COARSE_LOCATION, "Approximate location"))
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Need(Manifest.permission.NEARBY_WIFI_DEVICES, "Wi-Fi devices (NSD relay)"))
         }
     }
 

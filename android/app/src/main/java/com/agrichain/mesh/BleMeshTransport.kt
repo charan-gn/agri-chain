@@ -163,7 +163,9 @@ class BleMeshTransport(
         onLog = null
     }
 
-    override fun peers(envelope: MeshEnvelope): Set<String> {
+    override fun peers(envelope: MeshEnvelope): Set<String> = knownPeers()
+
+    override fun knownPeers(): Set<String> {
         if (stubMode) return emptySet()
         return synchronized(links) {
             links.values.mapNotNull { link -> link.peerId.takeIf { link.ready } }.toSet()

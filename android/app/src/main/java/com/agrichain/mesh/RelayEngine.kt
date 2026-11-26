@@ -2,6 +2,8 @@ package com.agrichain.mesh
 
 import com.agrichain.core.Event
 import com.agrichain.core.PublicKeySigner
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
 /**
  * Transport-agnostic relay: dedupe by envelopeId and eventId, forward with TTL,
@@ -20,9 +22,11 @@ class RelayEngine(
     private val log: (String) -> Unit = {},
     private val signer: PublicKeySigner? = null,
     private val chatListener: ((MeshEnvelope) -> Unit)? = null,
+    private val scheduler: ScheduledExecutorService? = null,
+    private val userListener: ((MeshEnvelope) -> Unit)? = null,
 ) {
 
-    private val seenEnvelopes = LinkedHashSet<String>()
+    private val dedupe = RelayDedupe()
 
     fun addTransport(transport: Transport) {
         synchronized(transports) {
@@ -59,8 +63,14 @@ class RelayEngine(
                 return ReceiveResult(0, 0, false, 0)
             }
             MeshKind.EVENTS -> Unit
+            MeshKind.USER -> if (
+                fromTransportId != null && fromTransportId !in CHAT_TRANSPORTS
+            ) {
+                log("ignored user announcement from $fromTransportId: not a local link")
+                return ReceiveResult(0, 0, false, 0)
+            }
         }
-        if (envelope.envelopeId in seenEnvelopes || store.hasSeenEnvelope(envelope.envelopeId)) {
+        if (dedupe.contains(envelope.envelopeId) || store.hasSeenEnvelope(envelope.envelopeId)) {
             return ReceiveResult(0, envelope.events.size, false, 0)
         }
         rememberEnvelope(envelope.envelopeId)
@@ -69,6 +79,7 @@ class RelayEngine(
             MeshKind.EVENTS -> receiveEvents(envelope, fromTransportId, fromPeerId)
             MeshKind.ACK -> receiveAck(envelope, fromTransportId, fromPeerId)
             MeshKind.CHAT -> receiveChat(envelope, fromTransportId)
+            MeshKind.USER -> receiveUser(envelope, fromTransportId)
         }
     }
 
@@ -89,11 +100,19 @@ class RelayEngine(
         }
 
         var forwarded = false
-        if (fresh > 0 && envelope.ttl > 1) {
-            val next = envelope.withTtl(envelope.ttl - 1)
+        val decision = RelayPolicy.decide(
+            ttl = envelope.ttl,
+            traffic = RelayTraffic.EVENTS,
+            degree = peerDegree(envelope),
+        )
+        if (fresh > 0 && decision.shouldRelay) {
             val skip = if (fromTransportId == "sms") "sms" else null
-            forwarded = forward(next, skipTransportId = skip) > 0
-            log("relay $fresh event(s), ttl ${next.ttl}")
+            forwarded = forward(
+                envelope.withTtl(decision.newTtl),
+                skipTransportId = skip,
+                delayMs = decision.delayMs,
+            ) > 0
+            log("relay $fresh event(s), ttl ${decision.newTtl}, jitter ${decision.delayMs}ms")
         }
 
         val uploaded = if (fresh > 0 && ledger?.available() == true) {
@@ -133,9 +152,18 @@ class RelayEngine(
         }
 
         var forwarded = false
-        if (envelope.ttl > 1) {
+        val decision = RelayPolicy.decide(
+            ttl = envelope.ttl,
+            traffic = RelayTraffic.ACK,
+            degree = peerDegree(envelope),
+        )
+        if (decision.shouldRelay) {
             val skip = if (fromTransportId == "sms") "sms" else null
-            forwarded = forward(envelope.withTtl(envelope.ttl - 1), skipTransportId = skip) > 0
+            forwarded = forward(
+                envelope.withTtl(decision.newTtl),
+                skipTransportId = skip,
+                delayMs = decision.delayMs,
+            ) > 0
         }
         log("ack ${verified.size} event(s) from $peer")
         return ReceiveResult(0, 0, forwarded, 0, verified.size)
@@ -155,29 +183,72 @@ class RelayEngine(
         }
         if (knownKey == null) store.rememberAckKey(envelope.senderId, publicKey)
 
-        chatListener?.invoke(envelope)
+        val forSomeoneElse = envelope.recipientId != null && envelope.recipientId != selfId
+        if (!forSomeoneElse) chatListener?.invoke(envelope)
         var forwarded = false
-        if (envelope.ttl > 1) {
+        val decision = RelayPolicy.decide(
+            ttl = envelope.ttl,
+            traffic = RelayTraffic.CHAT,
+            degree = peerDegree(envelope),
+        )
+        if (decision.shouldRelay) {
             forwarded = forward(
-                envelope.withTtl(envelope.ttl - 1),
+                envelope.withTtl(decision.newTtl),
                 allowedTransportIds = CHAT_TRANSPORTS,
+                delayMs = decision.delayMs,
             ) > 0
         }
-        log("chat from ${envelope.senderId.take(12)}: ${envelope.chatText?.take(40)}")
+        log(
+            "chat from ${envelope.senderId.take(12)} " +
+                "${envelope.recipientId?.let { "to $it" } ?: "to all"}: " +
+                "${envelope.chatText?.take(40)}"
+        )
         return ReceiveResult(0, 0, forwarded, 0)
     }
 
-    /** Signs and broadcasts a local chat message. Returns null when no signer is configured. */
+    /** Signs and sends a chat message; null recipient means broadcast. */
     @Synchronized
-    fun sendChat(text: String): ChatSendResult? {
+    fun sendChat(text: String, recipientId: String? = null): ChatSendResult? {
         val body = text.trim()
         if (body.isEmpty() || body.length > MeshEnvelope.MAX_CHAT_CHARS) return null
         val chatSigner = signer ?: return null
-        val envelope = MeshEnvelope.chat(selfId, body, chatSigner)
+        val envelope = MeshEnvelope.chat(selfId, body, chatSigner, recipientId = recipientId)
         rememberEnvelope(envelope.envelopeId)
         val sent = forward(envelope, allowedTransportIds = CHAT_TRANSPORTS)
-        log("chat sent to $sent link(s)")
+        log("chat sent ${recipientId?.let { "to $it" } ?: "to all"} on $sent link(s)")
         return ChatSendResult(envelope, sent)
+    }
+
+    /** Announces this phone's display name so other users can address it. */
+    @Synchronized
+    fun announceUser(name: String): MeshEnvelope? {
+        val cleaned = name.trim().take(40)
+        if (cleaned.isEmpty()) return null
+        val envelope = MeshEnvelope.user(selfId, cleaned)
+        rememberEnvelope(envelope.envelopeId)
+        val sent = forward(envelope, allowedTransportIds = CHAT_TRANSPORTS)
+        log("user announced as $cleaned on $sent link(s)")
+        return envelope
+    }
+
+    private fun receiveUser(envelope: MeshEnvelope, fromTransportId: String?): ReceiveResult {
+        userListener?.invoke(envelope)
+        val decision = RelayPolicy.decide(
+            ttl = envelope.ttl,
+            traffic = RelayTraffic.CHAT,
+            degree = peerDegree(envelope),
+        )
+        val forwarded = if (decision.shouldRelay) {
+            forward(
+                envelope.withTtl(decision.newTtl),
+                allowedTransportIds = CHAT_TRANSPORTS,
+                delayMs = decision.delayMs,
+            ) > 0
+        } else {
+            false
+        }
+        log("user ${envelope.senderId.take(12)} is ${envelope.senderName}")
+        return ReceiveResult(0, 0, forwarded, 0)
     }
 
     /** Uploads everything pending if a ledger is reachable, then broadcasts a signed ACK. */
@@ -220,43 +291,71 @@ class RelayEngine(
     }
 
     private fun rememberEnvelope(envelopeId: String) {
-        if (seenEnvelopes.size >= 512) {
-            seenEnvelopes.iterator().let { if (it.hasNext()) { it.next(); it.remove() } }
-        }
-        seenEnvelopes += envelopeId
+        dedupe.markProcessed(envelopeId)
         store.markSeenEnvelope(envelopeId)
     }
+
+    /** Number of distinct link peers, used by the BitChat-style flood controller. */
+    private fun peerDegree(envelope: MeshEnvelope): Int =
+        synchronized(transports) { transports.toList() }
+            .asSequence()
+            .filter { it.available() }
+            .flatMap { runCatching { it.peers(envelope) }.getOrDefault(emptySet()).asSequence() }
+            .distinct()
+            .count()
 
     private fun forward(
         envelope: MeshEnvelope,
         skipTransportId: String? = null,
         allowedTransportIds: Set<String>? = null,
+        delayMs: Int = 0,
     ): Int {
-        val peers = synchronized(transports) { transports.toList() }
+        val links = synchronized(transports) { transports.toList() }
         val eventIds = envelope.events.mapTo(mutableSetOf()) { it.eventId }
         var sent = 0
-        for (transport in peers) {
+        for (transport in links) {
             if (transport.id == skipTransportId) continue
             if (allowedTransportIds != null && transport.id !in allowedTransportIds) continue
             if (!transport.available()) continue
-            val count = runCatching { transport.send(envelope) }
-                .onFailure { log("${transport.id} send failed: ${it.message}") }
-                .getOrDefault(0)
-            sent += count
-            if (count > 0 && eventIds.isNotEmpty()) {
-                val carried = runCatching { transport.carriedEventIds(envelope) }
-                    .getOrDefault(eventIds)
-                val destinations = runCatching { transport.peers(envelope) }.getOrDefault(emptySet())
-                destinations.forEach { peer ->
-                    if (peer.isNotBlank()) store.markSentTo(normalizePeerId(peer), carried)
-                }
+            sent++
+            if (delayMs > 0 && scheduler != null) {
+                scheduler.schedule(
+                    { deliver(transport, envelope, eventIds, skipTransportId, allowedTransportIds) },
+                    delayMs.toLong(),
+                    TimeUnit.MILLISECONDS,
+                )
+            } else {
+                deliver(transport, envelope, eventIds, skipTransportId, allowedTransportIds)
             }
         }
         return sent
     }
 
+    private fun deliver(
+        transport: Transport,
+        envelope: MeshEnvelope,
+        eventIds: Set<String>,
+        skipTransportId: String?,
+        allowedTransportIds: Set<String>?,
+    ) {
+        if (transport.id == skipTransportId) return
+        if (allowedTransportIds != null && transport.id !in allowedTransportIds) return
+        if (!transport.available()) return
+        val count = runCatching { transport.send(envelope) }
+            .onFailure { log("${transport.id} send failed: ${it.message}") }
+            .getOrDefault(0)
+        if (count > 0 && eventIds.isNotEmpty()) {
+            val carried = runCatching { transport.carriedEventIds(envelope) }
+                .getOrDefault(eventIds)
+            val destinations = runCatching { transport.peers(envelope) }.getOrDefault(emptySet())
+            destinations.forEach { peer ->
+                if (peer.isNotBlank()) store.markSentTo(normalizePeerId(peer), carried)
+            }
+        }
+    }
+
     companion object {
         /** Chat stays on free local links; SMS costs money and LoRa frames are tiny. */
-        private val CHAT_TRANSPORTS = setOf("ble", "nearby")
+        private val CHAT_TRANSPORTS = setOf("ble", "wifi", "nearby")
     }
 }

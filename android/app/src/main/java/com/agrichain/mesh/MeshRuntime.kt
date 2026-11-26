@@ -8,11 +8,16 @@ import com.agrichain.core.ActorIdentity
 import com.agrichain.core.Event
 import com.agrichain.data.ChatMessage
 import com.agrichain.data.ChatStore
+import com.agrichain.data.LedgerApi
 import com.agrichain.data.SyncStore
+import com.agrichain.net.LedgerSettings
+import org.json.JSONObject
 import java.util.UUID
+import java.util.concurrent.Executors
 
 /**
- * Process-wide relay. Nearby, SMS, Meshtastic LoRa and HTTP all converge here.
+ * Process-wide relay. Wi-Fi NSD, BLE, Nearby, SMS, Meshtastic LoRa and HTTP all
+ * converge here; the link selector attaches one local radio at a time.
  */
 class MeshRuntime private constructor(context: Context) {
 
@@ -30,14 +35,34 @@ class MeshRuntime private constructor(context: Context) {
             prefs.edit().putString("senderId", it).apply()
         }
 
+    /** Display name used by contacts and by the dashboard user list. */
+    val userName: String
+        get() = prefs.getString(PREF_USER_NAME, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: "Phone ${selfId.takeLast(8)}"
+
+    /** Persistent phone-to-phone contact directory, filled by USER announcements. */
+    val contacts = RelayContacts(app)
+
+    @Volatile
+    private var lastAnnounceAt = 0L
+
     /** Meshtastic LoRa transport (865-867 MHz IN region). */
     val meshtastic = MeshtasticTransport(app)
 
     /** Raw BLE GATT mesh (BitChat-style fragmentation and TTL relay). */
     val ble = BleMeshTransport(app, selfId)
 
+    /** Wi-Fi NSD/TCP mesh, ported from the Offline Mesh Chat app. */
+    val wifi = WifiMeshTransport(app, selfId)
+
     /** Keystore-backed key for signed mesh ACKs and chat (H6); not a ledger actor. */
     private val ackIdentity = ActorIdentity.loadOrCreate(app, "mesh")
+
+    /** Staggers BitChat-style relay jitter without blocking the UI thread. */
+    private val relayScheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "agrichain-relay").apply { isDaemon = true }
+    }
 
     private val engine = RelayEngine(
         selfId,
@@ -47,6 +72,18 @@ class MeshRuntime private constructor(context: Context) {
         { line -> log(line) },
         ackIdentity,
         { envelope -> recordChat(envelope) },
+        relayScheduler,
+        { envelope -> recordUser(envelope) },
+    )
+
+    /** Picks Wi-Fi or BLE by discovered peers and attaches only that link. */
+    private val relay = RelayLinkManager(
+        wifi = wifi,
+        ble = ble,
+        attach = { engine.addTransport(it) },
+        detach = { engine.removeTransport(it) },
+        deliver = { envelope, viaId, peer -> onEnvelope(envelope, viaId, peer) },
+        log = { line -> log("relay: $line") },
     )
 
     @Volatile
@@ -140,25 +177,73 @@ class MeshRuntime private constructor(context: Context) {
         engine.removeTransport(transport)
     }
 
-    /** Starts raw BLE advertising + scanning. Safe to call more than once. */
+    /** Starts Wi-Fi + BLE discovery and attaches the link that finds a peer. */
+    fun startRelay(mode: RelayLinkMode = savedRelayMode()) {
+        prefs.edit().putString(PREF_RELAY_MODE, mode.name).apply()
+        relay.start(mode)
+    }
+
+    fun stopRelay() {
+        relay.stop()
+    }
+
+    fun relayStatus(): RelayLinkStatus = relay.status()
+
+    fun setRelayMode(mode: RelayLinkMode) {
+        prefs.edit().putString(PREF_RELAY_MODE, mode.name).apply()
+        relay.setMode(mode)
+    }
+
+    fun savedRelayMode(): RelayLinkMode =
+        runCatching { RelayLinkMode.valueOf(prefs.getString(PREF_RELAY_MODE, null) ?: "AUTO") }
+            .getOrDefault(RelayLinkMode.AUTO)
+
+    /** Kept for the older chat screens; it now starts BLE through the selector. */
     fun startBleMesh(): Boolean {
-        register(ble)
+        startRelay(RelayLinkMode.BLE)
         return ble.available()
     }
 
     fun stopBleMesh() {
-        unregister(ble)
+        stopRelay()
     }
 
-    fun bleRunning(): Boolean = ble.available()
+    fun bleRunning(): Boolean =
+        relay.status().active == RelayLinkId.BLE && ble.available()
 
-    fun blePeerCount(): Int = ble.connectedPeerCount()
+    fun blePeerCount(): Int = relay.status().blePeers
 
     fun smsAvailable(): Boolean = sms.available()
 
-    /** Stores a local chat message and broadcasts it to every ready link. */
-    fun sendChat(text: String): ChatMessage? {
-        val result = engine.sendChat(text) ?: return null
+    /** Changes this phone's display name and re-announces it to nearby phones. */
+    fun setUserName(name: String) {
+        val label = name.trim().take(40)
+        if (label.isEmpty()) return
+        prefs.edit().putString(PREF_USER_NAME, label).apply()
+        contacts.put(selfId, label)
+        announceUser(force = true)
+    }
+
+    /** Tells nearby phones who this is; throttled so a UI refresh cannot flood. */
+    fun announceUser(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastAnnounceAt < ANNOUNCE_INTERVAL_MS) return
+        lastAnnounceAt = now
+        val envelope = engine.announceUser(userName) ?: return
+        contacts.put(selfId, userName, envelope.sentAt)
+        mirrorUser(envelope.sentAt)
+    }
+
+    /** Phone ids currently visible on the active radio, for the recipient picker. */
+    fun discoveredPeers(): Set<String> = when (relay.status().active) {
+        RelayLinkId.WIFI -> wifi.knownPeers() - selfId
+        RelayLinkId.BLE -> ble.knownPeers() - selfId
+        null -> emptySet()
+    }
+
+    /** Stores a local chat message and sends it to a contact, or broadcasts it. */
+    fun sendChat(text: String, recipientId: String? = null): ChatMessage? {
+        val result = engine.sendChat(text, recipientId) ?: return null
         val body = result.envelope.chatText ?: return null
         val message = ChatMessage(
             envelopeId = result.envelope.envelopeId,
@@ -169,6 +254,7 @@ class MeshRuntime private constructor(context: Context) {
             status = if (result.links > 0) "sent" else "waiting",
         )
         chatStore.add(message)
+        mirrorChat(result.envelope, outgoing = true)
         return message
     }
 
@@ -180,7 +266,13 @@ class MeshRuntime private constructor(context: Context) {
      * relayed copies still dedupe by id.
      */
     fun flushChatOutbox(): Int {
-        if (ble.connectedPeerCount() == 0) return 0
+        val status = relay.status()
+        val peers = when (status.active) {
+            RelayLinkId.BLE -> status.blePeers
+            RelayLinkId.WIFI -> status.wifiPeers
+            null -> 0
+        }
+        if (peers == 0) return 0
         var sent = 0
         for (pending in chatStore.outbox()) {
             val result = engine.sendChat(pending.body) ?: continue
@@ -204,7 +296,44 @@ class MeshRuntime private constructor(context: Context) {
             status = "received",
         )
         chatStore.add(message)
+        mirrorChat(envelope, outgoing = false)
         chatListener?.invoke(message)
+    }
+
+    private fun recordUser(envelope: MeshEnvelope) {
+        val name = envelope.senderName ?: return
+        contacts.put(envelope.senderId, name, envelope.sentAt)
+        mirrorUser(envelope.sentAt, userId = envelope.senderId, name = name)
+    }
+
+    /** Best-effort mirror into the separate dashboard feed; never blocks chat. */
+    private fun mirrorUser(ts: Long, userId: String = selfId, name: String = userName) {
+        val row = JSONObject()
+            .put("userId", userId)
+            .put("name", name)
+            .put("ts", ts)
+        relayScheduler.execute {
+            runCatching { LedgerApi(LedgerSettings.baseUrl(app)).postRelayUsers(listOf(row)) }
+                .onFailure { log("dashboard user mirror failed: ${it.message}") }
+        }
+    }
+
+    private fun mirrorChat(envelope: MeshEnvelope, outgoing: Boolean) {
+        val row = JSONObject()
+            .put("envelopeId", envelope.envelopeId)
+            .put("senderId", envelope.senderId)
+            .put("senderName", if (envelope.senderId == selfId) userName else contacts.nameOf(envelope.senderId).orEmpty())
+            .put("recipientId", envelope.recipientId)
+            .put("recipientName", envelope.recipientId?.let { contacts.nameOf(it) }.orEmpty())
+            .put("body", envelope.chatText.orEmpty())
+            .put("ts", envelope.sentAt)
+            .put("observerId", selfId)
+            .put("direction", if (outgoing) "out" else "in")
+            .put("link", relay.status().active?.transportId.orEmpty())
+        relayScheduler.execute {
+            runCatching { LedgerApi(LedgerSettings.baseUrl(app)).postRelayMessages(listOf(row)) }
+                .onFailure { log("dashboard chat mirror failed: ${it.message}") }
+        }
     }
 
     private fun log(line: String) {
@@ -213,6 +342,10 @@ class MeshRuntime private constructor(context: Context) {
     }
 
     companion object {
+        private const val PREF_RELAY_MODE = "relayLinkMode"
+        private const val PREF_USER_NAME = "relayUserName"
+        private const val ANNOUNCE_INTERVAL_MS = 30_000L
+
         @Volatile
         private var instance: MeshRuntime? = null
 

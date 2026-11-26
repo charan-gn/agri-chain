@@ -15,6 +15,8 @@ enum class MeshKind(val code: String) {
     EVENTS("E"),
     ACK("A"),
     CHAT("C"),
+    /** Self-reported phone identity so peers can be shown as named contacts. */
+    USER("U"),
 }
 
 /**
@@ -35,6 +37,9 @@ data class MeshEnvelope(
     val events: List<Event> = emptyList(),
     val ackedEventIds: List<String> = emptyList(),
     val chatText: String? = null,
+    /** Null means broadcast; otherwise only this phone should display the chat. */
+    val recipientId: String? = null,
+    val senderName: String? = null,
     val sig: String? = null,
     val pubKey: String? = null,
 ) {
@@ -59,6 +64,10 @@ data class MeshEnvelope(
         }
         if (kind == MeshKind.CHAT) {
             chatText?.let { json.put("c", it) }
+            recipientId?.let { json.put("r", it) }
+        }
+        if (kind == MeshKind.USER) {
+            senderName?.let { json.put("n", it) }
         }
         if (kind == MeshKind.ACK || kind == MeshKind.CHAT) {
             sig?.let { json.put("sig", it) }
@@ -95,7 +104,11 @@ data class MeshEnvelope(
         return EventVerifier.verifyEcdsa(ackBytes(), signature, key)
     }
 
-    /** Bytes signed by the chat sender; `ttl` is intentionally excluded. */
+    /**
+     * Bytes signed by the chat sender; `ttl` is intentionally excluded. The
+     * recipient is signed only when present, so pre-addressing peers keep their
+     * original broadcast signature bytes.
+     */
     fun chatBytes(): ByteArray = CanonicalJson.encode(
         linkedMapOf<String, Any?>(
             "v" to VERSION,
@@ -104,7 +117,7 @@ data class MeshEnvelope(
             "s" to senderId,
             "t" to sentAt,
             "c" to (chatText ?: ""),
-        )
+        ).also { if (recipientId != null) it["r"] = recipientId }
     ).toByteArray(StandardCharsets.UTF_8)
 
     fun verifyChat(): Boolean {
@@ -170,12 +183,13 @@ data class MeshEnvelope(
             return unsigned.copy(sig = signature, pubKey = signer.publicKeySpkiBase64)
         }
 
-        /** Signed local chat. Relays forward it; the ledger never sees it. */
+        /** Signed local chat. Relays forward it; the ledger only mirrors a monitor row. */
         fun chat(
             senderId: String,
             text: String,
             signer: PublicKeySigner,
             ttl: Int = DEFAULT_TTL,
+            recipientId: String? = null,
         ): MeshEnvelope {
             val body = text.trim().take(MAX_CHAT_CHARS)
             require(body.isNotEmpty()) { "Chat message is empty" }
@@ -186,9 +200,24 @@ data class MeshEnvelope(
                 sentAt = System.currentTimeMillis(),
                 ttl = ttl,
                 chatText = body,
+                recipientId = recipientId?.takeIf { it.isNotBlank() },
             )
             val signature = Base64.getEncoder().encodeToString(signer.sign(unsigned.chatBytes()))
             return unsigned.copy(sig = signature, pubKey = signer.publicKeySpkiBase64)
+        }
+
+        /** Self-reported display name; no signature, treated as a UI label only. */
+        fun user(senderId: String, name: String, ttl: Int = DEFAULT_TTL): MeshEnvelope {
+            val label = name.trim().take(40)
+            require(label.isNotEmpty()) { "User name is empty" }
+            return MeshEnvelope(
+                kind = MeshKind.USER,
+                envelopeId = shortId(),
+                senderId = senderId,
+                sentAt = System.currentTimeMillis(),
+                ttl = ttl,
+                senderName = label,
+            )
         }
 
         fun parse(text: String): MeshEnvelope? =
@@ -206,6 +235,7 @@ data class MeshEnvelope(
                 MeshKind.EVENTS.code -> MeshKind.EVENTS
                 MeshKind.ACK.code -> MeshKind.ACK
                 MeshKind.CHAT.code -> MeshKind.CHAT
+                MeshKind.USER.code -> MeshKind.USER
                 else -> return null
             }
             val envelopeId = json.optString("id")
@@ -230,10 +260,16 @@ data class MeshEnvelope(
                 null
             }
 
-            if (events.isEmpty() && acks.isEmpty() && chat == null) return null
+            val senderName = if (kind == MeshKind.USER) {
+                json.optString("n").takeIf { it.isNotBlank() } ?: return null
+            } else {
+                null
+            }
+            if (events.isEmpty() && acks.isEmpty() && chat == null && senderName == null) return null
             if (kind == MeshKind.EVENTS && events.isEmpty()) return null
             if (kind == MeshKind.ACK && acks.isEmpty()) return null
             if (kind == MeshKind.CHAT && chat == null) return null
+            if (kind == MeshKind.USER && senderName == null) return null
             return MeshEnvelope(
                 kind = kind,
                 envelopeId = envelopeId,
@@ -243,6 +279,12 @@ data class MeshEnvelope(
                 events = events,
                 ackedEventIds = acks,
                 chatText = chat,
+                recipientId = if (kind == MeshKind.CHAT) {
+                    json.optString("r").takeIf { it.isNotBlank() }
+                } else {
+                    null
+                },
+                senderName = senderName,
                 sig = json.optString("sig").takeIf { it.isNotEmpty() },
                 pubKey = json.optString("pk").takeIf { it.isNotEmpty() },
             )

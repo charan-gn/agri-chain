@@ -87,6 +87,52 @@ def event_out(row: dict) -> dict:
     }
 
 
+def relay_user_in(payload: dict) -> dict:
+    """Validate a self-reported relay display name. Not an identity claim."""
+    user_id = str(payload.get("userId") or "").strip()
+    name = str(payload.get("name") or "").strip()
+    try:
+        ts = int(payload.get("ts", 0))
+    except (TypeError, ValueError):
+        ts = 0
+    if not user_id or not name or ts <= 0 or len(user_id) > 120 or len(name) > 40:
+        raise ApiError(400, "bad_relay_user", "invalid relay user")
+    return {"userId": user_id, "name": name, "ts": ts}
+
+
+def relay_message_in(payload: dict) -> dict:
+    """Validate an observed chat envelope for the dashboard monitor feed."""
+    envelope_id = str(payload.get("envelopeId") or "").strip()
+    sender_id = str(payload.get("senderId") or "").strip()
+    observer_id = str(payload.get("observerId") or "").strip()
+    body = str(payload.get("body") or "")
+    direction = str(payload.get("direction") or "").strip()
+    try:
+        ts = int(payload.get("ts", 0))
+    except (TypeError, ValueError):
+        ts = 0
+    if (
+        not envelope_id or not sender_id or not observer_id or not body or ts <= 0
+        or direction not in {"in", "out"}
+        or len(envelope_id) > 120 or len(sender_id) > 120
+        or len(observer_id) > 120 or len(body) > 2000
+    ):
+        raise ApiError(400, "bad_relay_message", "invalid relay message")
+    recipient_id = str(payload.get("recipientId") or "").strip() or None
+    return {
+        "envelopeId": envelope_id,
+        "senderId": sender_id,
+        "senderName": str(payload.get("senderName") or "")[:40],
+        "recipientId": recipient_id[:120] if recipient_id else None,
+        "recipientName": str(payload.get("recipientName") or "")[:40],
+        "body": body[:2000],
+        "ts": ts,
+        "observerId": observer_id,
+        "direction": direction,
+        "link": str(payload.get("link") or "")[:20],
+    }
+
+
 def load_batches(db: LedgerDb, before_seq: int | None = None) -> dict[str, list[dict]]:
     batches: dict[str, list[dict]] = {}
     for batch_id in db.register_batches():
@@ -817,6 +863,35 @@ def create_app(db_path: str | None = None, node_key_path: str | None = None) -> 
             "tamperEvents": sum(batch["tamperCount"] for batch in batches),
             "validChains": sum(1 for batch in batches if batch["verified"]),
             "recent": recent,
+            "updatedAt": int(time.time() * 1000),
+        }
+
+    @app.post("/relay/users", status_code=201)
+    def post_relay_users(body: dict = Body(...)) -> dict:
+        raw = body.get("users")
+        if not isinstance(raw, list) or len(raw) > 200:
+            raise ApiError(400, "bad_relay_users", "expected up to 200 users")
+        users = [relay_user_in(item) for item in raw if isinstance(item, dict)]
+        return {"accepted": db.upsert_relay_users(users, int(time.time() * 1000))}
+
+    @app.get("/relay/users")
+    def get_relay_users() -> dict:
+        return {"users": db.relay_users(), "updatedAt": int(time.time() * 1000)}
+
+    @app.post("/relay/messages", status_code=201)
+    def post_relay_messages(body: dict = Body(...)) -> dict:
+        raw = body.get("messages")
+        if not isinstance(raw, list) or len(raw) > 200:
+            raise ApiError(400, "bad_relay_messages", "expected up to 200 messages")
+        messages = [relay_message_in(item) for item in raw if isinstance(item, dict)]
+        stored = db.insert_relay_messages(messages, int(time.time() * 1000))
+        return {"accepted": stored, "received": len(messages)}
+
+    @app.get("/relay/messages")
+    def get_relay_messages(limit: int = Query(default=50, ge=1, le=200)) -> dict:
+        return {
+            "messages": db.relay_messages(limit),
+            "users": db.relay_users(),
             "updatedAt": int(time.time() * 1000),
         }
 

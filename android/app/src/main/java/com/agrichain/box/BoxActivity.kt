@@ -93,9 +93,6 @@ class BoxActivity : AppCompatActivity() {
             if (engine.logging) stopLogging() else ensurePermissionAndStart()
         }
         binding.fixNowButton.setOnClickListener { logCurrentFix() }
-        binding.tamperToggleButton.setOnClickListener { toggleTamper() }
-        binding.setGeofenceButton.setOnClickListener { setGeofenceHere() }
-        binding.simulateTamperButton.setOnClickListener { showSimulateTamper() }
 
         refreshUi()
         handleDevIntent()
@@ -325,27 +322,6 @@ class BoxActivity : AppCompatActivity() {
         refreshUi()
     }
 
-    private fun toggleTamper() {
-        if (engine.tamperArmed) {
-            engine.disarmTamper()
-            return
-        }
-        if (engine.boundBatchId == null) {
-            toast("Connect a crop first (Step 1)")
-            return
-        }
-        if (!hasLocationPermission()) {
-            toast("Location permission is needed to run the box guard")
-            return
-        }
-        engine.armTamper()
-        if (!BoxService.running) {
-            runCatching { BoxService.start(this) }
-                .onFailure { toast("Could not start box guard: ${it.message}") }
-        }
-        refreshUi()
-    }
-
     private fun logCurrentFix() {
         if (engine.boundBatchId == null) {
             toast("Connect a crop first (Step 1)")
@@ -363,38 +339,11 @@ class BoxActivity : AppCompatActivity() {
         engine.logCurrentFix()
     }
 
-    private fun setGeofenceHere() {
-        if (engine.boundBatchId == null) {
-            toast("Connect a crop first (Step 1)")
-            return
-        }
-        if (!hasLocationPermission()) {
-            toast("Location permission is needed for the safe zone")
-            return
-        }
-        engine.setGeofenceHere()
-    }
-
-    private fun showSimulateTamper() {
-        if (engine.boundBatchId == null) {
-            toast("Connect a crop first (Step 1)")
-            return
-        }
-        val kinds = arrayOf("movement", "light", "proximity", "geofence", "gps_off", "mock_location", "power")
-        AlertDialog.Builder(this)
-            .setTitle("Test tamper alarm")
-            .setItems(kinds) { _, which -> engine.simulateTamper(kinds[which]) }
-            .show()
-    }
-
     private fun refreshUi() {
         val batchId = engine.boundBatchId
         val ready = batchId != null
         binding.toggleButton.isEnabled = ready
         binding.fixNowButton.isEnabled = ready
-        binding.tamperToggleButton.isEnabled = ready
-        binding.setGeofenceButton.isEnabled = ready
-        binding.simulateTamperButton.isEnabled = ready
 
         binding.toggleButton.text =
             if (engine.logging) "Stop GPS Tracking" else "Start GPS Tracking"
@@ -402,17 +351,10 @@ class BoxActivity : AppCompatActivity() {
             getColor(if (engine.logging) R.color.alert_red else R.color.brand_green)
         )
 
-        binding.tamperToggleButton.text =
-            if (engine.tamperArmed) "Guard is ON (Tap to Turn Off)" else "Turn Guard ON"
-        binding.tamperToggleButton.backgroundTintList = ColorStateList.valueOf(
-            getColor(if (engine.tamperArmed) R.color.brand_green else R.color.box_amber)
-        )
-
         if (batchId == null) {
             binding.bindStatus.text = "Not connected. Scan the crop QR above."
             binding.chainStatus.text = ""
             binding.fixStatus.text = "Connect a crop in Step 1 first."
-            binding.tamperStatus.text = "Connect a crop in Step 1 first."
             binding.eventLog.text = ""
             return
         }
@@ -421,7 +363,6 @@ class BoxActivity : AppCompatActivity() {
         val localTraceHead = engine.events.head(batchId, "trace", engine.ledgerTraceHead)
         val batchEvents = engine.events.events(batchId)
         val gpsEvents = batchEvents.filter { it.type == "GPS" }
-        val tamperEvents = batchEvents.filter { it.type == "TAMPER" }
         val lastGps = gpsEvents.lastOrNull()
 
         binding.bindStatus.text = when (authorized) {
@@ -442,19 +383,6 @@ class BoxActivity : AppCompatActivity() {
             "No location pins yet."
         } else {
             "${gpsEvents.size} location pin(s) saved · Last ±${lastGps.data["accuracyM"]} m"
-        }
-
-        val fenceLat = engine.geofenceLat
-        val fenceLon = engine.geofenceLon
-        binding.tamperStatus.text = buildString {
-            append(if (engine.tamperArmed) "Guard is ON ✓" else "Guard is OFF")
-            append(" · Sensors: ${engine.sensorSummary()}")
-            if (fenceLat != null && fenceLon != null) {
-                append("\nSafe zone set: ${engine.geofenceRadiusM.toInt()} m radius")
-            } else {
-                append("\nSafe zone not set yet")
-            }
-            append("\nAlarms triggered: ${tamperEvents.size}")
         }
 
         binding.eventLog.text = batchEvents.takeLast(12).joinToString("\n") { event ->
