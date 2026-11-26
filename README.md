@@ -1,8 +1,8 @@
 # AgriChain — offline-first agri supply chain
 
-Crop tokens (1 token = 1 kg graded produce) on a hash-chained public ledger with visible prices.
-Farmers barter P2P; a spare-phone transport box logs GPS and tamper events while offline; phones relay signed events over a mesh and the first phone with internet syncs to the ledger.
-Buyers scan a batch QR to see the route, tamper flags, price and full history.
+v3: one ledger main node orders independently signed messages. Phones sign LISTING, ORDER, BIND and box messages offline; the same signed bytes travel over Wi-Fi, Bluetooth, LoRa or GSM SMS until any gateway reaches the ledger. The ledger assigns seq numbers, signs RECEIPTs, NOTICEs and price tables, and gateways push them back out. There are no per-actor hash chains, so there are no forks or contiguity problems over SMS or LoRa.
+
+v2 (events, per-actor chains, chat halo) still runs until T38 removes it.
 
 ## Task board
 
@@ -40,10 +40,24 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T26 | BLE chat mesh in the relay screen | done | charan | task-T26-ble-mesh | APP/MainActivity.kt, APP/mesh/BleMeshCodec.kt, APP/mesh/BleMeshTransport.kt, APP/mesh/MeshEnvelope.kt, APP/mesh/RelayEngine.kt, APP/mesh/MeshRuntime.kt, APP/mesh/Transport.kt, APP/data/ChatStore.kt, APP/core/Permissions.kt, android/app/src/main/res/layout/activity_main.xml, android/app/src/main/AndroidManifest.xml, android/app/src/test/java/com/agrichain/mesh/, README.md | T14, T21 |
 | T27 | Public web viewer + deploy | done | charan | task-T27-webapp-charan | webapp/, deploy/, README.md | T18, T19 |
 | T28 | Combined relay: Wi-Fi/BLE chat, usernames, halo feed | done | charan | task-T28-combined-relay | APP/mesh/, APP/core/Permissions.kt, APP/MainActivity.kt, android/app/src/main/res/layout/activity_{main,mesh}.xml, android/app/src/main/AndroidManifest.xml, APP/src/test/java/com/agrichain/mesh/, docs/RELAY-BACKENDS.md, README.md | T26 |
+| T29 | P0 v3 align: gap doc, board, v2 superseded | done | charan | task-T29-v3-align | README.md, docs/GAP.md, contracts/contract-v2.md | — |
+| T30 | P1 v3 spec + binary codec + vectors | open | — | — | contracts/MESSAGE_SPEC.md, contracts/{crops,regions,price_bounds}.json, contracts/vectors.json, contracts/ref/codec.py, APP/relay/, android/app/src/test/java/com/agrichain/relay/ | T29 |
+| T31 | P2 ledger v3 core: actors, ingest, receipts, chain, checkpoint, explorer | open | — | — | ledger/ | T30 |
+| T32 | P3 ledger v3 market, orders, trades, prices, outbox | open | — | — | ledger/, tools/e2e.py | T31 |
+| T33 | P4 relay core + JVM simulator | open | — | — | APP/relay/, android/app/src/test/java/com/agrichain/relay/ | T30 |
+| T34 | P5 Android relay service, Wi-Fi transport, gateway loop, screens | open | — | — | APP/relay/, APP/ui/, AndroidManifest.xml, layouts | T31, T33 |
+| T35 | P6 SMS transport + SMS gateway + text commands | open | — | — | APP/relay/, APP/core/Permissions.kt, AndroidManifest.xml, ledger/ | T34 |
+| T36 | P7 Meshtastic LoRa gateway | open | — | — | gateway/, tools/, APP/relay/ | T34 |
+| T37 | P8 BLE GATT transport | open | — | — | APP/relay/, AndroidManifest.xml | T34 |
+| T38 | P9 port batch/box/barter; remove /events + mesh/ | open | — | — | android/, ledger/, contracts/, README.md | T31, T32, T34-T37 |
+| T39 | P10 custodial SMS agent (stretch) | open | — | — | gateway/, ledger/, README.md | T35 |
+| T40 | P11 hardening + demo | open | — | — | README.md, docs/, tools/ | all v3 |
 
 ## Contracts
 
-Full v2 spec, REST routes, retry table, audit-finding map and D1-D11 device checklist: `contracts/contract-v2.md`. v1 events remain readable.
+**v3 wire contract:** `contracts/MESSAGE_SPEC.md` with `crops.json`, `regions.json`, `price_bounds.json`, `vectors.json` and `contracts/ref/codec.py`. Message <= 198 bytes, envelope = ttl || message <= 199 bytes, msgId = first 12 bytes of SHA-256(bytes before signature), money is integer paise/kg, and every field is big-endian. The ledger is the only orderer; clients sign independently.
+
+**v2 is superseded** and stays readable only until T38 deletes `/events` and `mesh/`: `contracts/contract-v2.md` (per-actor chains, REST routes, D1-D11). v1 events remain readable.
 
 - IDs: `batchId` UUIDv4; `actorId` `farmer:<uuid>` | `buyer:<uuid>` | `box:<uuid>`. Tokens are integer kg; `ts` is epoch ms; `lat`/`lon` are fixed 6-decimal strings or null; no floats.
 - Event: `{eventId,batchId,type,actorId,ts,lat,lon,data,prevHash,hash,sig}`. Types: `REGISTER | BIND | TRANSFER | GPS | TAMPER | DELIVER | BARTER`. `PRICE` is removed (`400 price_removed`).
@@ -53,6 +67,7 @@ Full v2 spec, REST routes, retry table, audit-finding map and D1-D11 device chec
 - `hash` = lowercase SHA-256 hex of the canonical bytes; `sig` = base64 DER ECDSA P-256/SHA-256. `POST /actors` and `/admin/*` require `X-Admin-Token`; events are signature-authorized.
 - Mesh: one v3 envelope (`E` events, `A` signed ACK, `C` signed chat) over Wi-Fi NSD/TCP and BLE GATT (auto-selected by discovered peers), plus Nearby, SMS (binary AC3) and Meshtastic LoRa as backups; chat stays off the ledger/SMS/LoRa. Flood control uses clean-room ports of BitChat's TTL/jitter policy and bounded dedupe. Parity: `contracts/vectors.json` is the Python/Kotlin suite. Details: `docs/RELAY-BACKENDS.md`.
 - Device checks D1-D11 are pending; quote `adb`/`logcat` output before marking one done.
+- v3 tasks use T29-T40 because T26-T28 were already used by the chat-era relay. Phase mapping is in `docs/GAP.md`.
 
 ## Inbox
 
@@ -107,6 +122,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-26 10:30] FROM charan → all: T28 verified on the JVM: `testDebugUnitTest` 124 tests pass (8 new for link selection, Wi-Fi framing, flood policy and dedupe; one chat test extended to `wifi`), and `assembleDebug` builds the APK. Two-phone Wi-Fi/Bluetooth handoff checks in `docs/RELAY-BACKENDS.md` remain pending until hardware is attached. | done
 - [2026-11-26 10:35] FROM charan → all: T26 UI correction. The launcher is back to the original home screen (Farmer, Buyer, Box, Prices, Sync, Mesh); chat no longer replaces it. Nearby chat, the username field and the mesh contacts list live in the Relay screen (Mesh & radio). T28's Wi-Fi/BLE backends, signed envelopes and tests are unchanged. | done
 - [2026-11-26 11:30] FROM charan → all: Relay screen simplified to one name field and one shared chat. The chat merges local Wi-Fi/Bluetooth messages with the **halo feed** (`GET /relay/messages`), so phones that can reach the ledger server appear in the same thread even when no local peer is present. The status line shows radio peers plus halo online/offline; feed names fold into the roster. The recipient picker is gone from the visible UI (broadcast-only send), and a waiting message keeps its envelope id/timestamp when flushed so the feed never gets a duplicate row. 128 Android unit tests, 82 ledger pytest and the webapp tests pass. | done
+- [2026-11-26 12:10] FROM charan → all: claiming T29 (P0 v3 align). The v3 guide supersedes contract v2: independent client-signed messages, the ledger as the only orderer, `/v3` endpoints, and the `relay/` package replacing `mesh/`. `docs/GAP.md` records what is reused vs replaced and the T29-T40 phase map. Old `/events` and `mesh/` stay until T38. | done
 
 ## Decisions log
 
@@ -146,6 +162,10 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-25 Laasya: T23 signs `{height,eventCount,root,ts,nodeId,pubKey}` as canonical JSON with the node's P-256 key. `root` is a Merkle root over `events.hash` in `seq` order (odd nodes are promoted by duplicating the last node; empty is 64 zeros), `height` is the max `seq`, and `nodeId` is the first 16 hex of SHA-256(SPKI). The node key lives at `ledger/node_key.pem` or `AGRICHAIN_NODE_KEY`; it is not committed. `mirror.py` treats a signature failure as exit 2 and a root/height/eventCount mismatch as exit 1.
 - 2026-11-25 charan: T25 adds Meshtastic LoRa as a fourth transport behind the shared `Transport` interface. Chunking uses prefix `MC1|<8hexId>|<idx>/<total>|<base64>` (distinct from SMS `AC1`), max 210 chars per chunk so the full Meshtastic frame stays ≤231 bytes. Binding uses `IMeshService` AIDL via reflection to avoid AIDL-generated stub on the compile classpath; private portnum 257 (range 256–511). `MeshtasticTransport` runs in stub mode on the JVM (no Android context) so unit tests exercise chunking, reassembly and dedup without hardware. India frequency: **865–867 MHz** only (IN region setting). Ruled out: Bridgefy/Briar/Bitchat (Indian I4C takedown notices, July 2026), MeshCore (incompatible with Meshtastic), OpenMANET (Morse Micro HaLow hardware unavailable in India). Real LoRa device test (D10) requires two 865 MHz Meshtastic boards and is marked pending.
 - 2026-11-25 charan: T26 adds a clean-room BLE GATT chat transport behind `Transport`; chat lives in the relay screen, not the launcher. The BitChat Android repo is GPL-3.0 (despite a public-domain claim in its README) and agri-chain has no license file, so no BitChat code is copied and the wire format is intentionally **not** BitChat-compatible; only the link-layer architecture is borrowed (advertise/scan one service, one characteristic, lower-hash central election, fragmentation, TTL relay). Chat envelopes are signed (`k:"C"`, TOFU key) but not encrypted, and are restricted to Wi-Fi/BLE/Nearby; they never enter the ledger outbox, SMS or LoRa. Waiting messages are persisted and re-signed when a peer appears. The I4C takedown risk from T25 remains a deployment decision, not a code decision.
+- 2026-11-26 charan: v3 replaces the per-actor chain model with independent client-signed messages ordered only by the ledger. Every arrival is stored with a ledger seq and status; `msgId` is the idempotency key. The old `/events` path and `mesh/` package remain until T38 so v2 demos keep working.
+- 2026-11-26 charan: v3 phases map to T29-T40 because T26-T28 already hold the chat-era relay. P0=T29, P1=T30, P2=T31, P3=T32, P4=T33, P5=T34, P6=T35, P7=T36, P8=T37, P9=T38, P10=T39, P11=T40. This avoids reusing done task IDs.
+- 2026-11-26 charan: `contracts/vectors.json` is renamed to `contracts/event-vectors.json` for the frozen v2 canonical-JSON suite; the new binary v3 vectors take the canonical `contracts/vectors.json` name. `contracts/ref/codec.py` is the reference encoder; Python, ledger and Kotlin tests all read the same v3 vectors.
+- 2026-11-26 charan: v3 wire rules are fixed: big-endian, message <= 198 bytes, envelope = ttl || message <= 199, 8-byte actor ids from SHA-256(compressed P-256 key), 12-byte msgId from the pre-signature bytes, raw 64-byte ECDSA r||s, integer paise/kg. These are contract changes; `MESSAGE_SPEC.md` is authoritative.
 
 ## Blockers
 

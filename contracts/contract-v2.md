@@ -1,5 +1,7 @@
 # AgriChain contract v2 (audit round 2)
 
+> **Superseded:** this v2 contract is kept for the old `/events` code path only. The v3 wire contract is `contracts/MESSAGE_SPEC.md`; the old per-actor chains, `mesh/` package and `/events` endpoints are removed in T38.
+
 Full v2 specification, REST surface, mesh envelope, audit-finding map and
 D1-D11 device checklist. The README keeps the task board, short contract
 summary, Inbox, Decisions Log, Blockers and run instructions; this file is
