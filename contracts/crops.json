@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "crops": [
+    {"id": 1, "name": "wheat", "label": "Wheat"},
+    {"id": 2, "name": "rice", "label": "Rice"},
+    {"id": 3, "name": "maize", "label": "Maize"},
+    {"id": 4, "name": "chilli", "label": "Chilli"},
+    {"id": 5, "name": "cotton", "label": "Cotton"},
+    {"id": 6, "name": "turmeric", "label": "Turmeric"},
+    {"id": 7, "name": "groundnut", "label": "Groundnut"},
+    {"id": 8, "name": "soybean", "label": "Soybean"}
+  ]
+}

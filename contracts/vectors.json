@@ -1,290 +1,484 @@
 {
-  "version": 2,
-  "description": "AgriChain canonical JSON parity vectors. Encode value with sorted ASCII keys, no whitespace, raw UTF-8 for non-ASCII, standard JSON escapes for control characters, then SHA-256 the UTF-8 bytes.",
+  "version": 1,
+  "spec": "contracts/MESSAGE_SPEC.md",
+  "generated": "2026-11-26",
+  "baseTs": 1764115200,
+  "keys": {
+    "client": {
+      "scalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkeyCompressedHex": "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+      "actorIdHex": "5baff89de7de5c1d"
+    },
+    "ledger": {
+      "scalarHex": "0000000000000000000000000000000000000000000000000000000000000002",
+      "pubkeyCompressedHex": "037cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc47669978",
+      "actorIdHex": "97e9d1d2a642f9d7"
+    },
+    "seller": {
+      "scalarHex": "0000000000000000000000000000000000000000000000000000000000000003",
+      "pubkeyCompressedHex": "025ecbe4d1a6330a44c8f7ef951d4bf165e6c6b721efada985fb41661bc6e7fd6c",
+      "actorIdHex": "701887edcadf4692"
+    },
+    "buyer": {
+      "scalarHex": "0000000000000000000000000000000000000000000000000000000000000004",
+      "pubkeyCompressedHex": "02e2534a3532d08fbba02dde659ee62bd0031fe2db785596ef509302446b030852",
+      "actorIdHex": "e65ba9af4891ce47"
+    },
+    "box": {
+      "scalarHex": "0000000000000000000000000000000000000000000000000000000000000005",
+      "pubkeyCompressedHex": "0251590b7a515140d2d784c85608668fdfef8c82fd1f5be52421554a0dc3d033ed",
+      "actorIdHex": "04501e343e6d38be"
+    }
+  },
   "vectors": [
     {
-      "name": "readme-register",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-111111111111",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "REGISTER",
-        "actorId": "farmer:33333333-3333-4333-8333-333333333333",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "crop": "wheat",
-          "grade": "A",
-          "weightKg": 100
-        },
-        "prevHash": ""
+      "name": "announce-basic",
+      "type": "ANNOUNCE",
+      "typeId": 1,
+      "flags": 0,
+      "ts": 1764115200,
+      "from": "client",
+      "to": null,
+      "body": {
+        "pubkey": "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+        "caps": 31,
+        "nick": "Asha"
       },
-      "canonical": "{\"actorId\":\"farmer:33333333-3333-4333-8333-333333333333\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"crop\":\"wheat\",\"grade\":\"A\",\"weightKg\":100},\"eventId\":\"11111111-1111-4111-8111-111111111111\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"REGISTER\"}",
-      "sha256": "cfad1baad5f9915b39aba2d330ca28b79feb12706d275fc7533c376361ebed80"
+      "bodyHex": "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2961f0441736861",
+      "unsignedHex": "010100692643005baff89de7de5c1d27036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2961f0441736861",
+      "msgIdHex": "2a58f24956bf069ec94589e9",
+      "signedMessageHex": "010100692643005baff89de7de5c1d27036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2961f04417368618d516d9be6e57f25623ca53ec71de886c13d167378564d72f897057c390e62636d01ebed94e7d37888fcdcaf18c9b4d793fef90448faab329e80ff666c440642"
     },
     {
-      "name": "telugu-crop",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-000000000002",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "REGISTER",
-        "actorId": "farmer:33333333-3333-4333-8333-333333333333",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "crop": "వరి",
-          "grade": "A",
-          "weightKg": 100
-        },
-        "prevHash": ""
+      "name": "announce-unicode",
+      "type": "ANNOUNCE",
+      "typeId": 1,
+      "flags": 0,
+      "ts": 1764115200,
+      "from": "client",
+      "to": null,
+      "body": {
+        "pubkey": "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+        "caps": 31,
+        "nick": "\u0c35\u0c30\u0c3f"
       },
-      "canonical": "{\"actorId\":\"farmer:33333333-3333-4333-8333-333333333333\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"crop\":\"వరి\",\"grade\":\"A\",\"weightKg\":100},\"eventId\":\"11111111-1111-4111-8111-000000000002\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"REGISTER\"}",
-      "sha256": "77f26f5dc1854e2f87934cdabc44259cf90c40f69e265e71cfccc7955c35b28c"
+      "bodyHex": "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2961f09e0b0b5e0b0b0e0b0bf",
+      "unsignedHex": "010100692643005baff89de7de5c1d2c036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2961f09e0b0b5e0b0b0e0b0bf",
+      "msgIdHex": "31e69ab8b8ac9039f1d80a6b"
     },
     {
-      "name": "hindi-crop",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-000000000003",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "REGISTER",
-        "actorId": "farmer:33333333-3333-4333-8333-333333333333",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "crop": "गेहूं",
-          "grade": "B",
-          "weightKg": 50
-        },
-        "prevHash": ""
+      "name": "announce-max-nick",
+      "type": "ANNOUNCE",
+      "typeId": 1,
+      "flags": 0,
+      "ts": 1764115200,
+      "from": "client",
+      "to": null,
+      "body": {
+        "pubkey": "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+        "caps": 17,
+        "nick": "Farmer12345678901234"
       },
-      "canonical": "{\"actorId\":\"farmer:33333333-3333-4333-8333-333333333333\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"crop\":\"गेहूं\",\"grade\":\"B\",\"weightKg\":50},\"eventId\":\"11111111-1111-4111-8111-000000000003\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"REGISTER\"}",
-      "sha256": "a2285f8c0c47ebbc3a64671521c9d949a4377d2708c316e3c08a4511d6c63c9f"
+      "bodyHex": "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c29611144661726d65723132333435363738393031323334",
+      "unsignedHex": "010100692643005baff89de7de5c1d37036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c29611144661726d65723132333435363738393031323334",
+      "msgIdHex": "d721e9a68b85f2d814d4552e"
     },
     {
-      "name": "emoji-crop",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-000000000004",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "REGISTER",
-        "actorId": "farmer:33333333-3333-4333-8333-333333333333",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "crop": "🌾🚜",
-          "grade": "C",
-          "weightKg": 7
-        },
-        "prevHash": ""
+      "name": "listing-no-batch",
+      "type": "LISTING",
+      "typeId": 16,
+      "flags": 0,
+      "ts": 1764115200,
+      "from": "seller",
+      "to": null,
+      "body": {
+        "crop": 1,
+        "qtyKg": 1200,
+        "askPaise": 2500,
+        "region": 1,
+        "validUntil": 1766707200,
+        "grade": 1,
+        "batchId": "000000000000000000000000"
       },
-      "canonical": "{\"actorId\":\"farmer:33333333-3333-4333-8333-333333333333\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"crop\":\"🌾🚜\",\"grade\":\"C\",\"weightKg\":7},\"eventId\":\"11111111-1111-4111-8111-000000000004\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"REGISTER\"}",
-      "sha256": "f117eb1bf1b46db5ebc2585ac1ab1d78ea780e19017a454d7af1712db9d59bfb"
+      "bodyHex": "01000004b0000009c401694dd00001000000000000000000000000",
+      "unsignedHex": "01100069264300701887edcadf46921b01000004b0000009c401694dd00001000000000000000000000000",
+      "msgIdHex": "f55217b71c1625cca8e1eb89"
     },
     {
-      "name": "slash-detail",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-000000000005",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "TAMPER",
-        "actorId": "box:55555555-5555-4555-8555-555555555555",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "kind": "light",
-          "detail": "gate/open/1"
-        },
-        "prevHash": ""
+      "name": "listing-with-batch",
+      "type": "LISTING",
+      "typeId": 16,
+      "flags": 0,
+      "ts": 1764115200,
+      "from": "seller",
+      "to": null,
+      "body": {
+        "crop": 2,
+        "qtyKg": 800,
+        "askPaise": 3100,
+        "region": 2,
+        "validUntil": 1766707200,
+        "grade": 2,
+        "batchId": "0102030405060708090a0b0c"
       },
-      "canonical": "{\"actorId\":\"box:55555555-5555-4555-8555-555555555555\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"detail\":\"gate/open/1\",\"kind\":\"light\"},\"eventId\":\"11111111-1111-4111-8111-000000000005\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"TAMPER\"}",
-      "sha256": "7d99a09516e918c0d2fe51d7504c359b2141e05d7b1222c329c40b813ba247dd"
+      "bodyHex": "020000032000000c1c02694dd000020102030405060708090a0b0c",
+      "unsignedHex": "01100069264300701887edcadf46921b020000032000000c1c02694dd000020102030405060708090a0b0c",
+      "msgIdHex": "178eee33a1aa43ba63b1be2e"
     },
     {
-      "name": "angle-brackets",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-000000000006",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "TAMPER",
-        "actorId": "box:55555555-5555-4555-8555-555555555555",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "kind": "proximity",
-          "detail": "<lid> & <seal>"
-        },
-        "prevHash": ""
+      "name": "order",
+      "type": "ORDER",
+      "typeId": 17,
+      "flags": 1,
+      "ts": 1764115200,
+      "from": "buyer",
+      "to": "seller",
+      "body": {
+        "listingId": "101112131415161718191a1b",
+        "qtyKg": 500,
+        "bidPaise": 2450,
+        "validUntil": 1766707200
       },
-      "canonical": "{\"actorId\":\"box:55555555-5555-4555-8555-555555555555\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"detail\":\"<lid> & <seal>\",\"kind\":\"proximity\"},\"eventId\":\"11111111-1111-4111-8111-000000000006\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"TAMPER\"}",
-      "sha256": "df426154efe72cce0f569754062969c750e3bf5822e3fbc724eb3b11f0951a15"
+      "bodyHex": "101112131415161718191a1b000001f400000992694dd000",
+      "unsignedHex": "01110169264300e65ba9af4891ce47701887edcadf469218101112131415161718191a1b000001f400000992694dd000",
+      "msgIdHex": "af595e8d3e23bfba9169eb1e"
     },
     {
-      "name": "quotes",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-000000000007",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "DELIVER",
-        "actorId": "farmer:33333333-3333-4333-8333-333333333333",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "note": "He said \"handed over\""
-        },
-        "prevHash": ""
+      "name": "order-accept",
+      "type": "ORDER_ACCEPT",
+      "typeId": 18,
+      "flags": 1,
+      "ts": 1764115200,
+      "from": "seller",
+      "to": "buyer",
+      "body": {
+        "orderId": "202122232425262728292a2b"
       },
-      "canonical": "{\"actorId\":\"farmer:33333333-3333-4333-8333-333333333333\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"note\":\"He said \\\"handed over\\\"\"},\"eventId\":\"11111111-1111-4111-8111-000000000007\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"DELIVER\"}",
-      "sha256": "270d6e240ed43b9aec9b19fa768778a1785a3030a3f50265d0d8cae1879f8bfb"
+      "bodyHex": "202122232425262728292a2b",
+      "unsignedHex": "01120169264300701887edcadf4692e65ba9af4891ce470c202122232425262728292a2b",
+      "msgIdHex": "ae937c8266fb3f29929af1af"
     },
     {
-      "name": "backslash-path",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-000000000008",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "DELIVER",
-        "actorId": "farmer:33333333-3333-4333-8333-333333333333",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "note": "C:\\farm\\lot\\7"
-        },
-        "prevHash": ""
+      "name": "order-cancel",
+      "type": "ORDER_CANCEL",
+      "typeId": 19,
+      "flags": 1,
+      "ts": 1764115200,
+      "from": "buyer",
+      "to": "seller",
+      "body": {
+        "orderId": "202122232425262728292a2b"
       },
-      "canonical": "{\"actorId\":\"farmer:33333333-3333-4333-8333-333333333333\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"note\":\"C:\\\\farm\\\\lot\\\\7\"},\"eventId\":\"11111111-1111-4111-8111-000000000008\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"DELIVER\"}",
-      "sha256": "b3e367838c8b9d83e47811038aa8be130384b601cf87a038e386b0d82e7e2d5c"
+      "bodyHex": "202122232425262728292a2b",
+      "unsignedHex": "01130169264300e65ba9af4891ce47701887edcadf46920c202122232425262728292a2b",
+      "msgIdHex": "688edded1b520af809aa65a6"
     },
     {
-      "name": "control-escapes",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-000000000009",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "DELIVER",
-        "actorId": "farmer:33333333-3333-4333-8333-333333333333",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "note": "line1\nline2\ttab\r\b\f\u0001"
-        },
-        "prevHash": ""
+      "name": "delivered",
+      "type": "DELIVERED",
+      "typeId": 20,
+      "flags": 1,
+      "ts": 1764115200,
+      "from": "buyer",
+      "to": "seller",
+      "body": {
+        "orderId": "202122232425262728292a2b"
       },
-      "canonical": "{\"actorId\":\"farmer:33333333-3333-4333-8333-333333333333\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"note\":\"line1\\nline2\\ttab\\r\\b\\f\\u0001\"},\"eventId\":\"11111111-1111-4111-8111-000000000009\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"DELIVER\"}",
-      "sha256": "015028a6a82badd2d44b84346f32b3468dc4be47c632f6a1fc27c2c1a5254c71"
+      "bodyHex": "202122232425262728292a2b",
+      "unsignedHex": "01140169264300e65ba9af4891ce47701887edcadf46920c202122232425262728292a2b",
+      "msgIdHex": "b7ec28f0c95fbe23f6143597"
     },
     {
-      "name": "mixed-unicode-latlon",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-00000000000a",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "TRANSFER",
-        "actorId": "farmer:33333333-3333-4333-8333-333333333333",
-        "ts": 1764000000123,
-        "lat": "17.385044",
-        "lon": "78.486671",
-        "data": {
-          "toActorId": "buyer:44444444-4444-4444-8444-444444444444",
-          "tokens": 5,
-          "pricePerKgPaise": 2450,
-          "grade": "A"
-        },
-        "prevHash": ""
+      "name": "barter-offer",
+      "type": "BARTER_OFFER",
+      "typeId": 21,
+      "flags": 0,
+      "ts": 1764115200,
+      "from": "seller",
+      "to": null,
+      "body": {
+        "giveCrop": 1,
+        "giveKg": 100,
+        "wantCrop": 2,
+        "wantKg": 40,
+        "region": 1,
+        "validUntil": 1766707200
       },
-      "canonical": "{\"actorId\":\"farmer:33333333-3333-4333-8333-333333333333\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"grade\":\"A\",\"pricePerKgPaise\":2450,\"toActorId\":\"buyer:44444444-4444-4444-8444-444444444444\",\"tokens\":5},\"eventId\":\"11111111-1111-4111-8111-00000000000a\",\"lat\":\"17.385044\",\"lon\":\"78.486671\",\"prevHash\":\"\",\"ts\":1764000000123,\"type\":\"TRANSFER\"}",
-      "sha256": "8e8130de42c4dc984f1c1570008718d06f7a46235cdec2e7a1c9b26f86bb8d7d"
+      "bodyHex": "0100000064020000002801694dd000",
+      "unsignedHex": "01150069264300701887edcadf46920f0100000064020000002801694dd000",
+      "msgIdHex": "55556a5d2553f748703e4252"
     },
     {
-      "name": "nested-unicode",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-00000000000b",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "GPS",
-        "actorId": "box:55555555-5555-4555-8555-555555555555",
-        "ts": 1764000000000,
-        "lat": "17.385044",
-        "lon": "78.486671",
-        "data": {
-          "accuracyM": 8,
-          "mock": false,
-          "meta": {
-            "tags": [
-              "రైతు",
-              "🌾"
-            ],
-            "note": "a/b <c> \"d\""
-          }
-        },
-        "prevHash": ""
+      "name": "barter-accept",
+      "type": "BARTER_ACCEPT",
+      "typeId": 22,
+      "flags": 1,
+      "ts": 1764115200,
+      "from": "buyer",
+      "to": "seller",
+      "body": {
+        "offerId": "303132333435363738393a3b"
       },
-      "canonical": "{\"actorId\":\"box:55555555-5555-4555-8555-555555555555\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"accuracyM\":8,\"meta\":{\"note\":\"a/b <c> \\\"d\\\"\",\"tags\":[\"రైతు\",\"🌾\"]},\"mock\":false},\"eventId\":\"11111111-1111-4111-8111-00000000000b\",\"lat\":\"17.385044\",\"lon\":\"78.486671\",\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"GPS\"}",
-      "sha256": "6d5444f687bca4a19d687325f34a500aef99925332073437335c6af7f71dbb2b"
+      "bodyHex": "303132333435363738393a3b",
+      "unsignedHex": "01160169264300e65ba9af4891ce47701887edcadf46920c303132333435363738393a3b",
+      "msgIdHex": "ff5cc3585f0516d5d108a828"
     },
     {
-      "name": "int64-bounds",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-00000000000c",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "TAMPER",
-        "actorId": "box:55555555-5555-4555-8555-555555555555",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "kind": "power",
-          "min": -9223372036854775808,
-          "max": 9223372036854775807,
-          "zero": 0
-        },
-        "prevHash": ""
+      "name": "tamper-alert",
+      "type": "TAMPER_ALERT",
+      "typeId": 32,
+      "flags": 0,
+      "ts": 1764115200,
+      "from": "box",
+      "to": null,
+      "body": {
+        "batchId": "0102030405060708090a0b0c",
+        "kind": 1,
+        "lat": 17385000,
+        "lon": 78486700,
+        "detectedTs": 1764114600
       },
-      "canonical": "{\"actorId\":\"box:55555555-5555-4555-8555-555555555555\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"kind\":\"power\",\"max\":9223372036854775807,\"min\":-9223372036854775808,\"zero\":0},\"eventId\":\"11111111-1111-4111-8111-00000000000c\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"TAMPER\"}",
-      "sha256": "c46649cf62bc3881cd71fbb4d1c449bf9a989ed9aef26feea88f91022a54733e"
+      "bodyHex": "0102030405060708090a0b0c010109462804ad9cac692640a8",
+      "unsignedHex": "0120006926430004501e343e6d38be190102030405060708090a0b0c010109462804ad9cac692640a8",
+      "msgIdHex": "5e0cb18b8b6856309dd76cbc"
     },
     {
-      "name": "key-order",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-00000000000d",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "REGISTER",
-        "actorId": "farmer:33333333-3333-4333-8333-333333333333",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "weightKg": 100,
-          "grade": "A",
-          "crop": "wheat"
-        },
-        "prevHash": ""
+      "name": "batch-register",
+      "type": "BATCH_REGISTER",
+      "typeId": 33,
+      "flags": 0,
+      "ts": 1764115200,
+      "from": "seller",
+      "to": null,
+      "body": {
+        "crop": 2,
+        "weightKg": 800,
+        "harvestTs": 1764028800,
+        "region": 2,
+        "grade": 2
       },
-      "canonical": "{\"actorId\":\"farmer:33333333-3333-4333-8333-333333333333\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"crop\":\"wheat\",\"grade\":\"A\",\"weightKg\":100},\"eventId\":\"11111111-1111-4111-8111-00000000000d\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"REGISTER\"}",
-      "sha256": "cc22b271b51831f8dc4615e7670ddced79c7deb8f1d3fde65ef64b31b9b721d7"
+      "bodyHex": "02000003206924f1800202",
+      "unsignedHex": "01210069264300701887edcadf46920b02000003206924f1800202",
+      "msgIdHex": "16ad66cb24c774ba1ce8d55b"
     },
     {
-      "name": "empty-and-list",
-      "value": {
-        "eventId": "11111111-1111-4111-8111-00000000000e",
-        "batchId": "22222222-2222-4222-8222-222222222222",
-        "type": "DELIVER",
-        "actorId": "farmer:33333333-3333-4333-8333-333333333333",
-        "ts": 1764000000000,
-        "lat": null,
-        "lon": null,
-        "data": {
-          "note": "",
-          "tags": [],
-          "flags": [
-            true,
-            false,
-            null
+      "name": "bind",
+      "type": "BIND",
+      "typeId": 35,
+      "flags": 0,
+      "ts": 1764115200,
+      "from": "seller",
+      "to": null,
+      "body": {
+        "batchId": "0102030405060708090a0b0c",
+        "boxId": "04501e343e6d38be"
+      },
+      "bodyHex": "0102030405060708090a0b0c04501e343e6d38be",
+      "unsignedHex": "01230069264300701887edcadf4692140102030405060708090a0b0c04501e343e6d38be",
+      "msgIdHex": "c6047a113b14ce38818171f9"
+    },
+    {
+      "name": "price-table",
+      "type": "PRICE_TABLE",
+      "typeId": 64,
+      "flags": 2,
+      "ts": 1764115200,
+      "from": "ledger",
+      "to": null,
+      "body": {
+        "region": 1,
+        "version": 3,
+        "asOf": 1764115200,
+        "part": 1,
+        "parts": 1,
+        "rows": [
+          [
+            1,
+            2500,
+            12
+          ],
+          [
+            2,
+            3100,
+            8
           ]
-        },
-        "prevHash": ""
+        ]
       },
-      "canonical": "{\"actorId\":\"farmer:33333333-3333-4333-8333-333333333333\",\"batchId\":\"22222222-2222-4222-8222-222222222222\",\"data\":{\"flags\":[true,false,null],\"note\":\"\",\"tags\":[]},\"eventId\":\"11111111-1111-4111-8111-00000000000e\",\"lat\":null,\"lon\":null,\"prevHash\":\"\",\"ts\":1764000000000,\"type\":\"DELIVER\"}",
-      "sha256": "3f1f6c5f3d821f79e34339bfced0f7c70ff3c156235d4ba73bec7fc660533fff"
+      "bodyHex": "010000000369264300010102010009c40c02000c1c08",
+      "unsignedHex": "0140026926430097e9d1d2a642f9d716010000000369264300010102010009c40c02000c1c08",
+      "msgIdHex": "3e78754dd81e91d3d9268f0e",
+      "signedMessageHex": "0140026926430097e9d1d2a642f9d716010000000369264300010102010009c40c02000c1c08511dd5a08d32f99c4420097c9ba4080906a01f71df101986748456f3a17ee45ab9763995d9e0588b8725f57c176d0988c1e7f001aad23d8ea6da34aca07ffe5e"
+    },
+    {
+      "name": "price-table-max",
+      "type": "PRICE_TABLE",
+      "typeId": 64,
+      "flags": 2,
+      "ts": 1764115200,
+      "from": "ledger",
+      "to": null,
+      "body": {
+        "region": 2,
+        "version": 4,
+        "asOf": 1764115200,
+        "part": 2,
+        "parts": 2,
+        "rows": [
+          [
+            1,
+            1000000,
+            0
+          ],
+          [
+            2,
+            1000001,
+            1
+          ],
+          [
+            3,
+            1000002,
+            2
+          ],
+          [
+            4,
+            1000003,
+            3
+          ],
+          [
+            5,
+            1000004,
+            4
+          ],
+          [
+            6,
+            1000005,
+            5
+          ],
+          [
+            7,
+            1000006,
+            6
+          ],
+          [
+            8,
+            1000007,
+            7
+          ],
+          [
+            1,
+            1000008,
+            8
+          ],
+          [
+            2,
+            1000009,
+            9
+          ],
+          [
+            3,
+            1000010,
+            10
+          ],
+          [
+            4,
+            1000011,
+            11
+          ],
+          [
+            5,
+            1000012,
+            12
+          ],
+          [
+            6,
+            1000013,
+            13
+          ],
+          [
+            7,
+            1000014,
+            14
+          ],
+          [
+            8,
+            1000015,
+            15
+          ],
+          [
+            1,
+            1000016,
+            16
+          ],
+          [
+            2,
+            1000017,
+            17
+          ],
+          [
+            3,
+            1000018,
+            18
+          ]
+        ]
+      },
+      "bodyHex": "020000000469264300020213010f424000020f424101030f424202040f424303050f424404060f424505070f424606080f424707010f424808020f424909030f424a0a040f424b0b050f424c0c060f424d0d070f424e0e080f424f0f010f425010020f425111030f425212",
+      "unsignedHex": "0140026926430097e9d1d2a642f9d76b020000000469264300020213010f424000020f424101030f424202040f424303050f424404060f424505070f424606080f424707010f424808020f424909030f424a0a040f424b0b050f424c0c060f424d0d070f424e0e080f424f0f010f425010020f425111030f425212",
+      "msgIdHex": "0360dc8c0ce4d970a3d638a5"
+    },
+    {
+      "name": "price-beacon",
+      "type": "PRICE_BEACON",
+      "typeId": 65,
+      "flags": 2,
+      "ts": 1764115200,
+      "from": "ledger",
+      "to": null,
+      "body": {
+        "region": 1,
+        "version": 3,
+        "hash8": "aa3f848ea53330c6"
+      },
+      "bodyHex": "0100000003aa3f848ea53330c6",
+      "unsignedHex": "0141026926430097e9d1d2a642f9d70d0100000003aa3f848ea53330c6",
+      "msgIdHex": "138f53a68bd735fcceb1b5f1"
+    },
+    {
+      "name": "receipt-accepted",
+      "type": "RECEIPT",
+      "typeId": 66,
+      "flags": 3,
+      "ts": 1764115200,
+      "from": "ledger",
+      "to": "seller",
+      "body": {
+        "msgId": "f55217b71c1625cca8e1eb89",
+        "status": 0,
+        "reason": 0,
+        "seq": 42,
+        "head8": "a1a2a3a4a5a6a7a8"
+      },
+      "bodyHex": "f55217b71c1625cca8e1eb8900000000002aa1a2a3a4a5a6a7a8",
+      "unsignedHex": "0142036926430097e9d1d2a642f9d7701887edcadf46921af55217b71c1625cca8e1eb8900000000002aa1a2a3a4a5a6a7a8",
+      "msgIdHex": "d8a7db227c8d726c74fc24fc"
+    },
+    {
+      "name": "notice-order-received",
+      "type": "NOTICE",
+      "typeId": 67,
+      "flags": 3,
+      "ts": 1764115200,
+      "from": "ledger",
+      "to": "seller",
+      "body": {
+        "kind": 1,
+        "refId": "202122232425262728292a2b",
+        "seq": 43,
+        "qtyKg": 500,
+        "pricePaise": 2450
+      },
+      "bodyHex": "01202122232425262728292a2b0000002b000001f400000992",
+      "unsignedHex": "0143036926430097e9d1d2a642f9d7701887edcadf46921901202122232425262728292a2b0000002b000001f400000992",
+      "msgIdHex": "1d701b4353c9a4eb13c62ce0"
     }
   ]
 }

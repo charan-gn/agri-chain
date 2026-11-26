@@ -12,8 +12,8 @@ import java.nio.charset.StandardCharsets
 class CanonicalVectorsTest {
 
     private fun loadVectors(): JSONObject {
-        val stream = javaClass.getResourceAsStream("/vectors.json")
-            ?: error("contracts/vectors.json is not on the test classpath")
+        val stream = javaClass.getResourceAsStream("/event-vectors.json")
+            ?: error("contracts/event-vectors.json is not on the test classpath")
         return JSONObject(stream.bufferedReader(StandardCharsets.UTF_8).readText())
     }
 

@@ -7,7 +7,7 @@ import pytest
 
 from crypto import canonical_event, canonical_json, sha256_hex
 
-VECTORS_PATH = Path(__file__).resolve().parents[2] / "contracts" / "vectors.json"
+VECTORS_PATH = Path(__file__).resolve().parents[2] / "contracts" / "event-vectors.json"
 VECTORS = json.loads(VECTORS_PATH.read_text(encoding="utf-8"))["vectors"]
 
 

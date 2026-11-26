@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "regions": [
+    {"id": 1, "name": "telangana", "label": "Telangana"},
+    {"id": 2, "name": "andhra", "label": "Andhra Pradesh"},
+    {"id": 3, "name": "karnataka", "label": "Karnataka"},
+    {"id": 4, "name": "maharashtra", "label": "Maharashtra"},
+    {"id": 5, "name": "madhya-pradesh", "label": "Madhya Pradesh"},
+    {"id": 6, "name": "gujarat", "label": "Gujarat"},
+    {"id": 7, "name": "rajasthan", "label": "Rajasthan"},
+    {"id": 8, "name": "tamil-nadu", "label": "Tamil Nadu"}
+  ]
+}
