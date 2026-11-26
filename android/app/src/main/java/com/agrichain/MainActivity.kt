@@ -16,6 +16,7 @@ import com.agrichain.mesh.MeshActivity
 import com.agrichain.net.LedgerDiscovery
 import com.agrichain.net.LedgerSettings
 import com.agrichain.prices.PricesActivity
+import com.agrichain.relay.RelayActivity
 import com.agrichain.ui.BuyerActivity
 import com.agrichain.ui.FarmerActivity
 import com.agrichain.ui.UiHelpers
@@ -70,6 +71,9 @@ class MainActivity : AppCompatActivity() {
         }
         binding.meshButton.setOnClickListener {
             startActivity(Intent(this, MeshActivity::class.java))
+        }
+        binding.relayButton.setOnClickListener {
+            startActivity(Intent(this, RelayActivity::class.java))
         }
 
         Permissions.logState(this)
