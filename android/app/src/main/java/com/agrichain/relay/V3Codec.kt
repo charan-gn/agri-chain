@@ -344,7 +344,7 @@ object V3Codec {
         return out
     }
 
-    private fun derToRaw(der: ByteArray): ByteArray {
+    internal fun derToRaw(der: ByteArray): ByteArray {
         var offset = 0
         require(der[offset++].toInt() and 0xFF == 0x30) { "bad DER sequence" }
         val (seqLen, seqOffset) = readDerLength(der, offset)

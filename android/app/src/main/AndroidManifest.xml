@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -115,6 +116,31 @@
             android:exported="false"
             android:label="Mesh relay" />
 
+        <activity
+            android:name=".relay.RelayActivity"
+            android:exported="false"
+            android:label="AgriMesh relay" />
+
+        <activity
+            android:name=".relay.MarketActivity"
+            android:exported="false"
+            android:label="Market" />
+
+        <activity
+            android:name=".relay.OrdersActivity"
+            android:exported="false"
+            android:label="Orders" />
+
+        <activity
+            android:name=".relay.PricesV3Activity"
+            android:exported="false"
+            android:label="Signed prices" />
+
+        <activity
+            android:name=".relay.SettingsV3Activity"
+            android:exported="false"
+            android:label="v3 settings" />
+
         <receiver
             android:name=".mesh.SmsReceiver"
             android:exported="true"
@@ -132,6 +158,11 @@
             android:name=".box.BoxService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <service
+            android:name=".relay.RelayService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
     </application>
 
 </manifest>
