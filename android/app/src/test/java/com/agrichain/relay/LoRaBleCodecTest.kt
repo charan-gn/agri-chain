@@ -64,7 +64,7 @@ class LoRaBleCodecTest {
             V3Codec.encodeUnsigned(
                 type = V3Type.ANNOUNCE,
                 fromId = ByteArray(8) { it.toByte() },
-                body = ByteArray(182) { index -> (index * 13).toByte() },
+                body = ByteArray(V3.MAX_BODY) { index -> (index * 13).toByte() },
                 ts = 1_700_000_000,
             ),
             3,
@@ -79,7 +79,7 @@ class LoRaBleCodecTest {
                 val accepted = reassembler.accept("peer", frame, 1_000L + index)
                 if (index == frames.size - 1) result = accepted else assertNull(accepted)
             }
-            assertArrayEquals(envelope, result)
+            assertArrayEquals("frameSize=$frameSize", envelope, result)
         }
     }
 
