@@ -50,6 +50,10 @@ object RelayRuntime {
     var wifi: WifiTransport? = null
         private set
 
+    @Volatile
+    var ble: BleTransport? = null
+        private set
+
     private lateinit var appContext: Context
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = mutableListOf<Job>()
@@ -112,6 +116,12 @@ object RelayRuntime {
         val wifiTransport = WifiTransport(appContext, signer)
         relay.attach(wifiTransport)
         wifi = wifiTransport
+
+        // BLE is a flooded mesh link like Wi-Fi; the transport itself refuses to
+        // start when the runtime Bluetooth permissions have not been granted.
+        val bleTransport = BleTransport(appContext, signer)
+        relay.attach(bleTransport)
+        ble = bleTransport
         core = relay
 
         jobs += scope.launch {
@@ -136,6 +146,8 @@ object RelayRuntime {
         scope.launch { runCatching { relay.stop() } }
         core = null
         wifi = null
+        ble?.close()
+        ble = null
         gatewayClient = null
         _status.value = "stopped"
         Log.i(TAG, "relay: stopped")
