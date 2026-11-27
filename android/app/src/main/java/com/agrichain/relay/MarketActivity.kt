@@ -36,6 +36,9 @@ class MarketActivity : AppCompatActivity() {
         binding.qtyInput.setText("500")
         binding.askInput.setText("2500")
         binding.validHoursInput.setText("24")
+        intent.getStringExtra(EXTRA_BATCH_ID)?.let { batchId ->
+            if (batchId.length == 24) binding.batchInput.setText(batchId)
+        }
         binding.createButton.setOnClickListener { createListing() }
         render()
     }
@@ -123,5 +126,9 @@ class MarketActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    companion object {
+        const val EXTRA_BATCH_ID = "batchId"
     }
 }

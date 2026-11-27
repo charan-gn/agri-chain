@@ -9,19 +9,16 @@ import java.util.Base64
 
 class SmsV3CodecTest {
 
+    /** A decodable envelope of exactly [size] bytes (17-byte header + body). */
     private fun envelope(size: Int = 60): ByteArray {
-        val body = V3Bodies.encode(
-            V3Type.ANNOUNCE,
-            V3Body.Announce(ByteArray(33) { 2 }, 0x0A, "farmer"),
-        )
+        require(size >= 18) { "envelope needs at least one body byte" }
         val unsigned = V3Codec.encodeUnsigned(
             type = V3Type.ANNOUNCE,
             fromId = ByteArray(8) { it.toByte() },
-            body = body,
+            body = ByteArray(size - 17) { index -> (index * 7).toByte() },
             ts = 1_700_000_000,
         )
-        val base = V3Codec.encodeEnvelope(unsigned, 7)
-        return if (base.size == size) base else ByteArray(size) { base[it % base.size] }
+        return V3Codec.encodeEnvelope(unsigned, 7)
     }
 
     @Test

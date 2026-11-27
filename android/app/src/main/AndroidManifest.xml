@@ -62,59 +62,24 @@
         </activity>
 
         <activity
-            android:name=".ui.FarmerActivity"
+            android:name=".relay.BatchV3Activity"
             android:exported="false"
-            android:label="Farmer" />
+            android:label="Crop batches" />
 
         <activity
-            android:name=".ui.BuyerActivity"
-            android:exported="false"
-            android:label="Buyer" />
-
-        <activity
-            android:name=".batch.RegisterBatchActivity"
-            android:exported="false"
-            android:label="Register batch" />
-
-        <activity
-            android:name=".batch.BatchQrActivity"
+            android:name=".relay.BatchQrV3Activity"
             android:exported="false"
             android:label="Batch QR" />
 
         <activity
-            android:name=".qr.ScanActivity"
-            android:exported="false"
-            android:label="Scan batch QR" />
-
-        <activity
-            android:name=".buyer.BuyerHistoryActivity"
-            android:exported="false"
-            android:label="Batch history" />
-
-        <activity
-            android:name=".barter.BarterActivity"
+            android:name=".relay.BarterV3Activity"
             android:exported="false"
             android:label="Barter" />
 
         <activity
-            android:name=".box.BoxActivity"
+            android:name=".relay.BoxV3Activity"
             android:exported="false"
             android:label="Transport box" />
-
-        <activity
-            android:name=".prices.PricesActivity"
-            android:exported="false"
-            android:label="Token price" />
-
-        <activity
-            android:name=".data.SyncActivity"
-            android:exported="false"
-            android:label="Ledger sync" />
-
-        <activity
-            android:name=".mesh.MeshActivity"
-            android:exported="false"
-            android:label="Mesh relay" />
 
         <activity
             android:name=".relay.RelayActivity"
@@ -153,11 +118,6 @@
         <receiver
             android:name=".relay.SmsStatusReceiver"
             android:exported="false" />
-
-        <service
-            android:name=".box.BoxService"
-            android:exported="false"
-            android:foregroundServiceType="location" />
 
         <service
             android:name=".relay.RelayService"

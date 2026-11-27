@@ -23,7 +23,8 @@ class SmsCommandHandler(
         if (words.size < 2) return null
         if (!words[0].equals("PRICE", true) && !words[0].equals("LISTINGS", true)) return null
         val crop = cropId(words[1]) ?: return null
-        val region = words.getOrNull(2)?.let { regionId(it) } ?: defaultRegion
+        val regionName = words.drop(2).joinToString(" ").trim()
+        val region = regionName.takeIf { it.isNotEmpty() }?.let { regionId(it) } ?: defaultRegion
         return Command(crop, region)
     }
 

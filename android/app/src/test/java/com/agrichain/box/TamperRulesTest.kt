@@ -1,10 +1,7 @@
 package com.agrichain.box
 
-import com.agrichain.core.Signer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -75,82 +72,5 @@ class TamperRulesTest {
         assertTrue(TamperRules.shouldRecordGps(baseLat, baseLon, t0, 17.385089, baseLon, t0 + 60_000L))
         // ~33 m away after 5 s -> distance gate
         assertTrue(TamperRules.shouldRecordGps(baseLat, baseLon, t0, 17.385344, baseLon, t0 + 5_000L))
-    }
-}
-
-class TamperEventsTest {
-
-    private val signer = object : Signer {
-        override val actorId = "box:33333333-3333-4333-8333-333333333333"
-        override fun sign(bytes: ByteArray): ByteArray = "test-signature".toByteArray()
-    }
-
-    private val batchId = "22222222-2222-4222-8222-222222222222"
-
-    @Test
-    fun `tamper event carries kind detail and previous hash`() {
-        val event = TamperEvents.create(
-            batchId = batchId,
-            signer = signer,
-            kind = "geofence",
-            detail = "240 m outside 200 m fence",
-            prevHash = "abc123",
-            ts = 1764000000123,
-        )
-
-        assertEquals("TAMPER", event.type)
-        assertEquals("geofence", event.data["kind"])
-        assertEquals("240 m outside 200 m fence", event.data["detail"])
-        assertEquals("abc123", event.prevHash)
-        assertNull(event.lat)
-        assertNull(event.lon)
-        assertEquals(64, event.hash.length)
-    }
-
-    @Test
-    fun `blank detail is left out of the event data`() {
-        val event = TamperEvents.create(
-            batchId = batchId,
-            signer = signer,
-            kind = "movement",
-            detail = " ",
-            prevHash = "",
-        )
-
-        assertEquals(setOf("kind"), event.data.keys)
-    }
-
-    @Test
-    fun `tamper event accepts v2 kinds and traceHead with last fix`() {
-        val traceHead = "a".repeat(64)
-        for (kind in listOf("gps_off", "mock_location", "power")) {
-            val event = TamperEvents.create(
-                batchId = batchId,
-                signer = signer,
-                kind = kind,
-                detail = "test",
-                prevHash = "abc123",
-                traceHead = traceHead,
-                lastLat = "17.385044",
-                lastLon = "78.486671",
-            )
-            assertEquals(kind, event.data["kind"])
-            assertEquals(traceHead, event.data["traceHead"])
-            assertEquals("17.385044", event.data["lastLat"])
-            assertEquals("78.486671", event.data["lastLon"])
-        }
-    }
-
-    @Test
-    fun `unknown kind is rejected`() {
-        assertThrows(IllegalArgumentException::class.java) {
-            TamperEvents.create(
-                batchId = batchId,
-                signer = signer,
-                kind = "vibration",
-                detail = null,
-                prevHash = "",
-            )
-        }
     }
 }

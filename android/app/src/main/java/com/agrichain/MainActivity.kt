@@ -7,18 +7,18 @@ import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import com.agrichain.box.BoxActivity
 import com.agrichain.core.Permissions
-import com.agrichain.data.SyncActivity
-import com.agrichain.data.SyncStore
 import com.agrichain.databinding.ActivityMainBinding
-import com.agrichain.mesh.MeshActivity
 import com.agrichain.net.LedgerDiscovery
 import com.agrichain.net.LedgerSettings
-import com.agrichain.prices.PricesActivity
+import com.agrichain.relay.BarterV3Activity
+import com.agrichain.relay.BatchV3Activity
+import com.agrichain.relay.BoxV3Activity
+import com.agrichain.relay.MarketActivity
+import com.agrichain.relay.OrdersActivity
+import com.agrichain.relay.PricesV3Activity
 import com.agrichain.relay.RelayActivity
-import com.agrichain.ui.BuyerActivity
-import com.agrichain.ui.FarmerActivity
+import com.agrichain.relay.RelayRuntime
 import com.agrichain.ui.UiHelpers
 
 class MainActivity : AppCompatActivity() {
@@ -55,22 +55,22 @@ class MainActivity : AppCompatActivity() {
         binding.setupPill.setOnClickListener { binding.setupHeader.performClick() }
 
         binding.farmerButton.setOnClickListener {
-            startActivity(Intent(this, FarmerActivity::class.java))
+            startActivity(Intent(this, BatchV3Activity::class.java))
         }
         binding.buyerButton.setOnClickListener {
-            startActivity(Intent(this, BuyerActivity::class.java))
+            startActivity(Intent(this, MarketActivity::class.java))
         }
         binding.boxButton.setOnClickListener {
-            startActivity(Intent(this, BoxActivity::class.java))
+            startActivity(Intent(this, BoxV3Activity::class.java))
         }
         binding.pricesButton.setOnClickListener {
-            startActivity(Intent(this, PricesActivity::class.java))
+            startActivity(Intent(this, PricesV3Activity::class.java))
         }
         binding.syncButton.setOnClickListener {
-            startActivity(Intent(this, SyncActivity::class.java))
+            startActivity(Intent(this, OrdersActivity::class.java))
         }
         binding.meshButton.setOnClickListener {
-            startActivity(Intent(this, MeshActivity::class.java))
+            startActivity(Intent(this, BarterV3Activity::class.java))
         }
         binding.relayButton.setOnClickListener {
             startActivity(Intent(this, RelayActivity::class.java))
@@ -87,7 +87,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        refreshSyncBadge()
+        refreshOutboxBadge()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -102,29 +102,26 @@ class MainActivity : AppCompatActivity() {
         intent?.getStringExtra("openBox")?.let { batchId ->
             Log.i(Permissions.TAG, "dev: opening box $batchId autoStart=$autoStart")
             startActivity(
-                Intent(this, BoxActivity::class.java)
-                    .putExtra("batchId", batchId)
-                    .putExtra("autoStart", autoStart)
+                Intent(this, BoxV3Activity::class.java)
+                    .putExtra(BoxV3Activity.EXTRA_BATCH_ID, batchId)
+                    .putExtra(BoxV3Activity.EXTRA_AUTO_START, autoStart)
             )
         }
         if (intent?.getBooleanExtra("openMesh", false) == true) {
-            Log.i(Permissions.TAG, "dev: opening mesh autoStart=$autoStart")
-            startActivity(
-                Intent(this, MeshActivity::class.java)
-                    .putExtra("autoStart", autoStart)
-            )
+            Log.i(Permissions.TAG, "dev: opening relay autoStart=$autoStart")
+            startActivity(Intent(this, RelayActivity::class.java))
         }
     }
 
-    private fun refreshSyncBadge() {
-        val pending = runCatching { SyncStore(this).pendingCount() }.getOrDefault(0)
+    private fun refreshOutboxBadge() {
+        val pending = RelayRuntime.snapshot().pendingOwnCount
         if (pending > 0) {
             binding.syncBadge.visibility = View.VISIBLE
             binding.syncBadge.text = "$pending waiting"
-            binding.syncSubtitle.text = "Tap to upload $pending saved item(s)"
+            binding.syncSubtitle.text = "Signed messages waiting for the ledger"
         } else {
             binding.syncBadge.visibility = View.GONE
-            binding.syncSubtitle.text = "All saved records are up to date"
+            binding.syncSubtitle.text = "Outbox is empty"
         }
     }
 
@@ -150,7 +147,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             "Denied (enable in App info > Permissions):\n\n" +
                 Permissions.describe(missing) +
-                "\n\nSMS toggles greyed out? Open App info, tap ⋮, then " +
+                "\n\nSMS toggles greyed out? Open App info, tap the menu, then " +
                 "\"Allow restricted settings\", and grant again."
         }
         AlertDialog.Builder(this)
@@ -174,7 +171,7 @@ class MainActivity : AppCompatActivity() {
         discovering = true
         binding.findLedgerButton.isEnabled = false
         if (announce) {
-            binding.ledgerStatus.text = "Looking for server on USB and Wi-Fi…"
+            binding.ledgerStatus.text = "Looking for server on USB and Wi-Fi..."
             binding.ledgerStatus.setTextColor(getColor(R.color.status_neutral))
         }
         LedgerDiscovery.discoverAsync(

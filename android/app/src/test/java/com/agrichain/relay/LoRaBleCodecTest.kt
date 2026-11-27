@@ -10,7 +10,6 @@ class LoRaBleCodecTest {
 
     private fun envelope(size: Int = 0): ByteArray {
         val body = V3Bodies.encode(
-            V3Type.ANNOUNCE,
             V3Body.Announce(ByteArray(33) { 2 }, 0x0A, "farmer"),
         )
         val unsigned = V3Codec.encodeUnsigned(
@@ -61,7 +60,15 @@ class LoRaBleCodecTest {
 
     @Test
     fun bleChunksRoundTripAtSeveralMtuSizes() {
-        val envelope = ByteArray(199) { (it * 13 % 256).toByte() }
+        val envelope = V3Codec.encodeEnvelope(
+            V3Codec.encodeUnsigned(
+                type = V3Type.ANNOUNCE,
+                fromId = ByteArray(8) { it.toByte() },
+                body = ByteArray(182) { index -> (index * 13).toByte() },
+                ts = 1_700_000_000,
+            ),
+            3,
+        )
         for (frameSize in listOf(23, 64, 180, 512)) {
             val frames = BleV3Codec.chunks(envelope, frameSize)
             assertTrue(frames.all { it.size <= frameSize })
