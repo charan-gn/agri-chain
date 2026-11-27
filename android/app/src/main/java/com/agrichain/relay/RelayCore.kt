@@ -430,6 +430,16 @@ class RelayCore(
         RelayCounters(processedCount, duplicateCount, droppedCount, relayedCount)
     }
 
+    /** Test/simulator hook: clears counters without touching relay state. */
+    fun resetCounters() {
+        synchronized(lock) {
+            processedCount = 0
+            duplicateCount = 0
+            droppedCount = 0
+            relayedCount = 0
+        }
+    }
+
     fun outboxCursor(): Long = synchronized(lock) { outboxCursor }
 
     fun listingCursor(): Long = synchronized(lock) { listingCursor }

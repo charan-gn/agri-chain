@@ -218,7 +218,8 @@ class RelayCoreSimTest {
         assertEquals("bad_ledger_signature", bad.droppedReason)
         assertFalse(bad.fresh)
 
-        val clientClaim = unsigned(V3Type.RECEIPT, receiptBody, node.actorId)
+        val claimBytes = unsigned(V3Type.RECEIPT, receiptBody, node.actorId)
+        val clientClaim = claimBytes + V3Codec.signRaw(claimBytes, node.key)
         val claimed = node.core.injectLedgerMessage(clientClaim, ttl = 7)
         assertEquals("client_claimed_ledger_type", claimed.droppedReason)
         assertFalse(claimed.fresh)

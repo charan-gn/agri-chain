@@ -171,5 +171,6 @@ class SimNode(
 
     fun resetCounters() {
         transport.resetCounters()
+        core.resetCounters()
     }
 }

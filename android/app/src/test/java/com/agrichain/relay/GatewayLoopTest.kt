@@ -74,10 +74,10 @@ class GatewayLoopTest {
         val client = FakeClient()
         val loop = GatewayLoop(core, client)
 
-        repeat(60) {
+        repeat(60) { index ->
             core.originate(
                 V3Type.LISTING,
-                V3Body.Listing(1, 1, 2_000, 1, ts + 3_600, 1, ByteArray(12)),
+                V3Body.Listing(1, index.toLong() + 1, 2_000, 1, ts + 3_600, 1, ByteArray(12)),
             )
         }
         assertEquals(60, core.pendingCount())
