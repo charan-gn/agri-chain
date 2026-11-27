@@ -21,6 +21,7 @@ venv/
 *.db
 *.sqlite3
 *.log
+ledger/keys/
 
 # OS
 .DS_Store

@@ -79,7 +79,7 @@ All field widths are bytes. `crop`, `region`, `grade` are ids from
 | 0x11 | ORDER | `listingId12 qtyKg4 bidPaise4 validUntil4`; `hasTo` = seller |
 | 0x12 | ORDER_ACCEPT | `orderId12`; `hasTo` = buyer |
 | 0x13 | ORDER_CANCEL | `orderId12`; `hasTo` = the other party |
-| 0x14 | DELIVERED | `orderId12`; `hasTo` = buyer |
+| 0x14 | DELIVERED | `orderId12`; `hasTo` = seller (sent by the buyer) |
 | 0x15 | BARTER_OFFER | `giveCrop1 giveKg4 wantCrop1 wantKg4 region1 validUntil4` |
 | 0x16 | BARTER_ACCEPT | `offerId12`; `hasTo` = offer owner |
 | 0x20 | TAMPER_ALERT | `batchId12 kind1 lat4 lon4 detectedTs4` (`i32` microdegrees) |

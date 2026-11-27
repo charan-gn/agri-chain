@@ -33,6 +33,7 @@ from barter import (
 )
 from tokens import compute_balances, median20_price, price_summary, trades_for_crop
 from validation import PriceRemoved, ValidationError, validate_actor_registration, validate_event
+from v3_api import install_v3
 
 DEFAULT_DB = Path(__file__).resolve().parent / "ledger.db"
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -408,7 +409,11 @@ def admin_token() -> str | None:
     return None
 
 
-def create_app(db_path: str | None = None, node_key_path: str | None = None) -> FastAPI:
+def create_app(
+    db_path: str | None = None,
+    node_key_path: str | None = None,
+    v3_key_path: str | None = None,
+) -> FastAPI:
     app = FastAPI(title="AgriChain Ledger", version="2.0")
     db = LedgerDb(db_path or os.environ.get("LEDGER_DB", str(DEFAULT_DB)))
     app.state.db = db
@@ -901,6 +906,16 @@ def create_app(db_path: str | None = None, node_key_path: str | None = None) -> 
         return FileResponse(WEB_DIR / "index.html")
 
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+
+    v3_db_path = db_path or os.environ.get("LEDGER_DB", str(DEFAULT_DB))
+    if v3_key_path is None:
+        v3_key_path = os.environ.get("AGRICHAIN_V3_KEY")
+    install_v3(
+        app,
+        db_path=v3_db_path,
+        key_path=v3_key_path,
+        require_admin=require_admin,
+    )
     return app
 
 
