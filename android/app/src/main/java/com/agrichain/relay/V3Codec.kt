@@ -210,10 +210,15 @@ object V3Codec {
             "private key does not match fromId"
         }
         val unsigned = unsignedBytes(message)
+        return unsigned + signRaw(unsigned, privateKey)
+    }
+
+    /** Raw 64-byte r||s over [unsigned]. Shared by JVM tests and the Keystore signer. */
+    fun signRaw(unsigned: ByteArray, privateKey: ECPrivateKey): ByteArray {
         val signer = Signature.getInstance("SHA256withECDSA")
         signer.initSign(privateKey)
         signer.update(unsigned)
-        return unsigned + derToRaw(signer.sign())
+        return derToRaw(signer.sign())
     }
 
     fun verify(
