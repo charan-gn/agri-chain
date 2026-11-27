@@ -63,6 +63,13 @@ class RelayCore(
     /** SMS fallback is supplied by the app/service so the router stays JVM-testable. */
     var smsFallback: (suspend (number: String, envelope: ByteArray) -> Boolean)? = null
 
+    /**
+     * Called for every fresh ledger-signed message injected by the gateway loop.
+     * Receipts are addressed to the originating phone, so the SMS gateway needs
+     * the raw bytes to forward them back over GSM.
+     */
+    var ledgerMessageHook: ((raw: ByteArray) -> Unit)? = null
+
     init {
         require(signer.actorId.size == V3.ACTOR_ID_LEN) { "actorId must be 8 bytes" }
         require(signer.publicKey.size == 33) { "public key must be compressed" }
@@ -315,8 +322,11 @@ class RelayCore(
     }
 
     /** Inject a ledger-signed message that arrived over HTTP (receipt/outbox/prices). */
-    suspend fun injectLedgerMessage(raw: ByteArray, ttl: Int = config.meshTtl): RelayOutcome =
-        onEnvelope(V3Codec.encodeEnvelope(raw, ttl), null, null)
+    suspend fun injectLedgerMessage(raw: ByteArray, ttl: Int = config.meshTtl): RelayOutcome {
+        val outcome = onEnvelope(V3Codec.encodeEnvelope(raw, ttl), null, null)
+        if (outcome.fresh) runCatching { ledgerMessageHook?.invoke(raw) }
+        return outcome
+    }
 
     fun noteGatewaySeen(now: Long = clock()) {
         synchronized(lock) { gatewaySeenAt = now }
