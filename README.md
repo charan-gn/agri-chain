@@ -2,7 +2,7 @@
 
 v3: one ledger main node orders independently signed messages. Phones sign LISTING, ORDER, BIND and box messages offline; the same signed bytes travel over Wi-Fi, Bluetooth, LoRa or GSM SMS until any gateway reaches the ledger. The ledger assigns seq numbers, signs RECEIPTs, NOTICEs and price tables, and gateways push them back out. There are no per-actor hash chains, so there are no forks or contiguity problems over SMS or LoRa.
 
-The v2 `/events` ledger API and per-actor chains are removed; the legacy Android `mesh/` screens still need the T38 port to v3 messages.
+The v2 `/events` ledger API, per-actor chains and legacy Android `mesh/` screens are removed. Batch, box, barter, market and relay screens now originate signed v3 messages through `RelayRuntime` and use any available radio to reach the ledger.
 
 ## Task board
 
@@ -49,15 +49,15 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T35 | P6 SMS transport + SMS gateway + text commands | done | charan | task-T35-sms | APP/relay/, APP/core/Permissions.kt, AndroidManifest.xml, ledger/ | T34 |
 | T36 | P7 Meshtastic LoRa gateway | done | charan | task-T35-sms | gateway/, APP/relay/, AndroidManifest.xml | T34 |
 | T37 | P8 BLE GATT transport | done | charan | task-T35-sms | APP/relay/, AndroidManifest.xml | T34 |
-| T38 | P9 port batch/box/barter; remove /events + mesh/ | claimed | charan | task-T35-sms | ledger/, webapp/, contracts/, android/ | T31, T32, T34-T37 |
+| T38 | P9 port batch/box/barter; remove /events + mesh/ | done | charan | task-T38-v3-port | APP/relay/, APP/qr/, APP/MainActivity.kt, AndroidManifest.xml, layouts, tests, ledger/, webapp/, contracts/, README.md | T31, T32, T34-T37 |
 | T39 | P10 custodial SMS agent (stretch) | done | charan | task-T35-sms | gateway/, README.md | T35 |
-| T40 | P11 hardening + demo | claimed | charan | task-T35-sms | ledger/, webapp/, gateway/, README.md | all v3 |
+| T40 | P11 hardening + demo | claimed | charan | task-T38-v3-port | tools/soak.py, README.md | all v3 |
 
 ## Contracts
 
 **v3 wire contract:** `contracts/MESSAGE_SPEC.md` with `crops.json`, `regions.json`, `price_bounds.json`, `vectors.json` and `contracts/ref/codec.py`. Message <= 198 bytes, envelope = ttl || message <= 199 bytes, msgId = first 12 bytes of SHA-256(bytes before signature), money is integer paise/kg, and every field is big-endian. The ledger is the only orderer; clients sign independently.
 
-**v2 is removed from the ledger**: `/events`, the per-actor chain modules and their tests are deleted, and the web viewer proxies only `/v3` feeds. The old Android `mesh/` package and its screens are still pending the T38 port.
+**v2 is removed from the ledger and Android**: `/events`, the per-actor chain modules, their tests, the Android `mesh/` package and its screens are deleted. The web viewer proxies only `/v3` feeds. v3 batch/box/barter flows live in `APP/relay/` and originate signed messages through `RelayRuntime`.
 
 - IDs: `batchId` UUIDv4; `actorId` `farmer:<uuid>` | `buyer:<uuid>` | `box:<uuid>`. Tokens are integer kg; `ts` is epoch ms; `lat`/`lon` are fixed 6-decimal strings or null; no floats.
 - Event: `{eventId,batchId,type,actorId,ts,lat,lon,data,prevHash,hash,sig}`. Types: `REGISTER | BIND | TRANSFER | GPS | TAMPER | DELIVER | BARTER`. `PRICE` is removed (`400 price_removed`).
@@ -139,6 +139,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-27 18:15] FROM charan → all: T38 backend portion done on task-T35-sms: `/events` and the v2 ledger modules/tests are deleted, `webapp/` proxies only `/v3` feeds, and the public viewer now renders v3 messages/listings/orders/trades/prices. The Android `mesh/` package and batch/box/barter screens still need the v3 `RelayRuntime.originate` port, so T38 remains claimed, not done. | done
 - [2026-11-27 18:20] FROM charan → all: T39 done on task-T35-sms. `gateway/sms_agent.py` registers a phone + PIN once, derives a per-phone P-256 agent key with HKDF (no private keys stored), signs LISTING/ORDER messages, and serves a 160-character SMS bridge; 8 agent tests pass. | done
 - [2026-11-27 18:25] FROM charan → all: T40 hardening started on task-T35-sms: fixed the outbox regression where a recipient's later activity hid ORDER_RECEIVED/DELIVERED notices, added a `/v3` per-IP rate-limit middleware, and migrated the web viewer. Soak/demo runbook work remains, so T40 stays claimed. Evidence: `pytest ledger/tests gateway/tests -q` **66 passed**, `pytest webapp/tests -q` **5 passed**. | done
+- [2026-11-27 19:15] FROM charan → all: T38 done on task-T38-v3-port. Batch/box/barter screens now originate v3 `BATCH_REGISTER`, `BIND`, `TAMPER_ALERT`, `BARTER_OFFER` and `BARTER_ACCEPT` through `RelayRuntime`; the v2 `mesh/`, `batch/`, `barter/`, `buyer/`, `data/`, `prices/` and old box screens/tests are deleted. `BatchQrCodec` still parses legacy UUIDv4 labels beside 24-hex v3 ids. Evidence: `pytest ledger/tests gateway/tests webapp/tests -q` **71 passed**, `python tools/e2e.py` **PASS (11 checks)**, Android `testDebugUnitTest` compiled and ran **56 tests with one known failure** (`LoRaBleCodecTest.bleChunksRoundTripAtSeveralMtuSizes`: oversize ANNOUNCE body). `assembleDebug` not claimed. `adb devices -l` showed only `List of devices attached`, so no radio/device claim. | done
+- [2026-11-27 19:20] FROM charan → all: T40 hardening continues on task-T38-v3-port. Added `tools/soak.py`: signed LISTING/TAMPER/ORDER/ACCEPT/DELIVERED/BARTER traffic, checkpoint and outbox signature verification, JSON report. In-process smoke (`--minutes 0.2 --interval 1`) **PASS**: 10 cycles, 28 messages accepted, 0 rejected, checkpoint seq 33. The 1-hour live soak, OEM battery rehearsal and two-phone radio checks remain pending, so T40 stays claimed. | open
 
 ## Decisions log
 
@@ -197,11 +199,13 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-27 charan: T37 BLE frames use a 14-byte header (`AB`, version, type, msgId4, index2, total2, length2`) and reassembly is keyed by link/peer id so frames from different links cannot be mixed.
 - 2026-11-27 charan: T39 is custodial but not key-exporting. `HKDF-SHA256(master, phone, "agri-chain-sms-agent-v1")` derives a deterministic P-256 scalar; PINs are PBKDF2-SHA256 hashes and a successful PIN opens a 15-minute session. Replies are <=160 characters so they fit one SMS.
 - 2026-11-27 charan: the v3 outbox is keyed only by its `id` cursor and 72-hour age. A recipient sending a later message must not hide earlier receipts/notices, so the old `last_sent` suppression was removed and the baseline market outbox assertion now passes.
-- 2026-11-27 charan: the v2 ledger API is removed rather than aliased. `ledger/app.py` now only installs `/v3`, `/health` and `/explorer`, with a per-IP `/v3` rate limit; old v2 modules, tests and contract-v2 artifacts are deleted. The Android `mesh/` deletion is the remaining T38 step.
+- 2026-11-27 charan: the v2 ledger API is removed rather than aliased. `ledger/app.py` now only installs `/v3`, `/health` and `/explorer`, with a per-IP `/v3` rate limit; old v2 modules, tests and contract-v2 artifacts are deleted.
+- 2026-11-27 charan: T38 ports batch/box/barter onto v3 client-signed messages. `BATCH_REGISTER`/`BIND` come from `BatchV3Activity`, `TAMPER_ALERT` from `BoxRuntimeV3`, and `BARTER_OFFER`/`BARTER_ACCEPT` from `BarterV3Activity`; all call `RelayRuntime.originate`, so they queue offline and drain over Wi-Fi/BLE/SMS/LoRa. GPS fixes stay local on the phone; only the last fix is carried in `TAMPER_ALERT`, and no v3 GPS wire message is added. The v2 packages and their tests are deleted; `BatchQrCodec` accepts both 24-hex v3 ids and legacy UUIDv4 labels under `agri://batch/`.
+- 2026-11-27 charan: T40 uses `tools/soak.py` for repeatable signed traffic. A one-hour live run is the acceptance soak; `--in-process --minutes 0.1` is only a smoke test. The script never logs private keys and writes a JSON report for evidence. No radio or phone claim is made without quoted `adb devices`/`logcat` output.
 
 ## Blockers
 
-- **No Android phone on Laasya's workstation.** `adb devices -l` is empty (2026-11-25 13:49). D1–D9 in the Device test checklist are pending; do not claim them as verified. Charan has the USB test phone for T16.
+- **No Android phone attached.** `adb devices -l` output (2026-11-27): `List of devices attached` with no device rows. D1–D11 and all v3 Wi-Fi/SMS/BLE/LoRa checks are pending; do not claim them as verified without quoted `adb`/`logcat` output.
 - **T16 is charan's.** T20/T22 need his foreground location service, API-level permission flow and `scripts/dev.sh`. Coordinate before touching `APP/box/`, `AndroidManifest.xml` or `android/app/build.gradle.kts`.
 - **T17 instrumented test needs a phone + `adb reverse tcp:8000 tcp:8000`.** The JVM/Python parity suite runs without one; the AndroidKeyStore test is written but cannot be marked passed until D2/D4 are run.
 - **Physical provenance (H4) and production TLS (M9) are not demo features.** The QR is copyable; the demo runs cleartext on a trusted LAN/USB. The runbook requires a TLS reverse proxy and a signed one-time QR for production.
@@ -209,10 +213,34 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - **Key recovery (H1) is not implemented.** A lost AndroidKeyStore key means a lost actor identity/balance; the demo re-registers a new actor. Production needs recovery/revocation.
 - **SMS volume/policy (M5).** India P2P daily limits and Play SMS-permission policy must be checked before a field pilot; the demo uses a configured gateway phone.
 - Teammates need JDK 17 and the Android SDK (build-tools 35+, platform 36) to build the app.
+- **T40 one-hour soak is pending.** Only the short in-process smoke has run; the 60-minute live-ledger run and its JSON report are still required before T40 can be marked done.
+- **One Android unit test still fails.** `LoRaBleCodecTest.bleChunksRoundTripAtSeveralMtuSizes` feeds an invalid oversize body to `ANNOUNCE`; 55 of 56 tests pass. Fix the test body before claiming a green Android suite.
+- **OEM battery killers are unverified.** Xiaomi/Samsung/OnePlus and other skins can stop the `AgriMesh` foreground relay service; the runbook below is a manual checklist, not a device claim.
 
 ## Demo script and run instructions
 
-Final script is T24. Every task must serve this flow:
+### T40 v3 runbook (supported)
+
+1. Start the v3 ledger: `./tools/ledger.sh` with `AGRICHAIN_DEV=1` (demo admin token `dev-admin-token`).
+2. Preflight on the laptop: `python tools/e2e.py` (expect `PASS: 11 checks`) and `python tools/soak.py --in-process --minutes 0.2 --interval 1 --report soak-smoke.json` (expect `SOAK PASS`). The acceptance run is `python tools/soak.py --base-url http://127.0.0.1:8000 --minutes 60 --interval 10 --report soak-1h.json`; attach the JSON report as evidence.
+3. On each phone, open **AgriMesh Relay** first and start the service. The launcher outbox badge shows signed messages waiting. Ledger host auto-detection uses saved → USB loopback → emulator host → LAN.
+4. **My Crops**: register a batch (24-hex v3 id), show the `agri://batch/<id>` QR, and copy the **Transport box** actor id into **Bind box**. Both messages sign offline and queue in the relay.
+5. **Transport box**: bind the batch id, start GPS, arm sensors, and use **Simulate tamper** for the demo. GPS fixes stay on the phone; `TAMPER_ALERT` carries only the last fix. Keep the relay notification visible when the screen is off.
+6. **Market / Orders / Signed prices**: create a listing with the batch id, accept the order, mark delivered (buyer → seller), then verify the signed price version and outbox receipts/notices.
+7. **Barter**: create an offer, share the offer id and your actor id with the second farmer, and accept from the other phone with those two ids.
+8. Verify on the laptop: `GET /v3/messages`, `/v3/orders`, `/v3/trades`, `/v3/prices`, `/v3/checkpoint`. For a device/radio claim, quote the matching `adb devices -l` and `logcat -s AgriMesh` output; never claim a phone check from a JVM test.
+
+**Battery-killer guidance for rehearsal** (manual checklist, not verified on hardware):
+
+- Xiaomi/Redmi/POCO: enable **Autostart**, set battery saver to **No restrictions**, allow background location, and lock AgriChain in recent apps.
+- Samsung: Settings → Battery → Battery usage → AgriChain → **Unrestricted**; turn off **Put unused apps to sleep** and allow background location.
+- OnePlus/Oppo/Realme: disable battery optimisation, enable **Auto Launch**, allow background data and location.
+- Pixel/stock Android: battery optimisation **Don't optimize**; location **Allow all the time**. Disable Adaptive Battery and Data Saver for the demo.
+- After screen-off and 30 minutes, confirm `logcat -s AgriMesh` still shows relay pings/outbox drains. OEM ROMs vary; record the vendor/OS and the quoted log before marking a device check done.
+
+**Known limits**: no v3 GPS wire message; no escrow for barter; no key recovery/revocation; cleartext LAN/USB only unless a TLS reverse proxy is added; QR is copyable; SMS volume/Play policy and India LoRa band rules need pilot approval; 1-hour live soak and all radio device checks are pending.
+
+Historical T24/v2 runbook below is retained for audit only. v2 `/events` endpoints and the old Android screens are removed; these steps are **not** the supported demo. Every task must serve the v3 flow above:
 
 1. Start the v2 ledger with `AGRICHAIN_DEV=1` (admin token `dev-admin-token`); register farmer, buyer and box actors while online.
 2. Farmer registers a batch (max 100000 kg) → QR shown; box scans the QR.
