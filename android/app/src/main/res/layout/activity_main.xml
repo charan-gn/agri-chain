@@ -343,6 +343,7 @@
                     android:background="@drawable/bg_soft_pill"
                     android:paddingHorizontal="10dp"
                     android:paddingVertical="4dp"
+                    android:text="0"
                     android:textColor="@color/sync_indigo"
                     android:textSize="13sp"
                     android:textStyle="bold"
@@ -350,7 +351,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Wide Action Card: Nearby Share (Mesh) -->
+        <!-- Wide Action Card: Crop Message Board (Relay) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/meshButton"
             android:layout_width="match_parent"
@@ -374,7 +375,7 @@
                 <ImageView
                     android:layout_width="54dp"
                     android:layout_height="54dp"
-                    android:contentDescription="Share without internet"
+                    android:contentDescription="Crop message board"
                     android:src="@drawable/ill_mesh" />
 
                 <LinearLayout
@@ -387,7 +388,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Share Phone-to-Phone"
+                        android:text="Crop Message Board"
                         android:textColor="@color/text_primary"
                         android:textSize="17sp"
                         android:textStyle="bold" />
@@ -395,61 +396,9 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Pass records via Bluetooth or SMS"
+                        android:text="Relay crop data, prices, and alerts via mesh"
                         android:textColor="@color/text_secondary"
                         android:textSize="13sp" />
-                </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Small v3 relay entry alongside the v0.7 picture cards -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/relayButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:clickable="true"
-            android:focusable="true"
-            app:cardBackgroundColor="@color/surface_muted"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/border_warm"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="10dp">
-
-                <ImageView
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:contentDescription="Mesh relay"
-                    android:src="@drawable/ill_mesh" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Mesh Relay"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Radios, peers &amp; receipts"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

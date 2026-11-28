@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, OrdersActivity::class.java))
         }
         binding.meshButton.setOnClickListener {
-            startActivity(Intent(this, BarterV3Activity::class.java))
+            startActivity(Intent(this, RelayActivity::class.java))
         }
         binding.relayButton.setOnClickListener {
             startActivity(Intent(this, RelayActivity::class.java))
