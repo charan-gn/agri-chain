@@ -343,7 +343,6 @@
                     android:background="@drawable/bg_soft_pill"
                     android:paddingHorizontal="10dp"
                     android:paddingVertical="4dp"
-                    android:text="0"
                     android:textColor="@color/sync_indigo"
                     android:textSize="13sp"
                     android:textStyle="bold"

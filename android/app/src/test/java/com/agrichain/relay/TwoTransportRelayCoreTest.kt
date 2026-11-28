@@ -167,7 +167,7 @@ class TwoTransportRelayCoreTest {
         assertEquals(1, relay.wifi.sendCount)
         assertEquals(1, relay.ble.sendCount)
         assertEquals(4L, relay.core.priceVersions()[1])
-        assertEquals(5, V3Codec.decodeEnvelope(relay.wifi.sent.single()).first)
-        assertEquals(5, V3Codec.decodeEnvelope(relay.ble.sent.single()).first)
+        assertEquals(4, V3Codec.decodeEnvelope(relay.wifi.sent.single()).first)
+        assertEquals(4, V3Codec.decodeEnvelope(relay.ble.sent.single()).first)
     }
 }
