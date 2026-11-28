@@ -10,21 +10,35 @@ local link, not as separate installable apps:
 | BitChat (`bitchat/`, Swift) | Clean-room ports of the relay flood-control policy and bounded time-expired deduplicator | `android/app/src/main/java/com/agrichain/mesh/RelayPolicy.kt`, `RelayDedupe.kt` |
 | AgriChain (`android/`, package `com.agrichain`) | UI, envelope, signing, outbox, TTL/ACK rules, transport seam | `MeshActivity.kt`, `MeshRuntime.kt`, `RelayEngine.kt`, `Transport.kt` |
 
-## Link selection
+## Simultaneous Wi-Fi and BLE mesh (v3)
 
-`RelayLinkManager` starts both local radios when the relay is turned on:
+Every phone attaches both local radios when the relay starts; there is no
+one-at-a-time selector:
 
 - `wifi`: NSD `_agrichain._tcp.` on the local network, TCP `peerId<TAB>envelopeJson`.
-- `ble`: the existing raw GATT link with `AB` fragmentation.
+- `ble`: the raw GATT link with `AB` fragmentation.
 
-Both radios keep discovering, but only the selected one is attached to
-`RelayEngine`, so one envelope is never sent twice. `RelayLinkSelector` picks
-the link that has peers; in `AUTO` it keeps the current link on a tie and drops
-it when that link has no peers. `WIFI` and `BLE` force one radio. The choice is
-persisted in `agrichain_mesh/relayLinkMode`.
+`WifiTransport` and `BleTransport` are both attached to `RelayCore`, which fans
+every originated or relayed envelope out through all attached mesh links.
+`V3Settings.bleEnabled` is effectively always true, and the settings screen shows
+the BLE switch checked and disabled; the stored preference remains only for
+compatibility. Reported capabilities always include `CAP_WIFI` and `CAP_BLE`.
 
-Chat used to be limited to `ble`/`nearby`; `wifi` is now in the same
-`CHAT_TRANSPORTS` allow-list. SMS and LoRa still never carry chat.
+One `msgId` seen-set is shared across radios, so an envelope that arrives on
+Wi-Fi and then on BLE (or the other way round) is processed and relayed once.
+A relayed message gets a single TTL decrement before the fan-out: a sparse mesh
+sends per link, excluding only the arrival link, while a dense mesh sends one
+broadcast per transport. SMS and LoRa remain optional and are not part of the
+always-on pair.
+
+The gateway is independent of the radios. `GatewayLoop` retries the ledger over
+HTTP whether or not any mesh peer is present, and ledger-signed receipts,
+notices and prices are injected into the same `RelayCore` and flooded over both
+meshes. The ledger host is discovered automatically at relay start and rechecked
+in the background: `LedgerDiscovery` probes the saved URL, the USB loopback, the
+emulator host and UDP/LAN replies from `ledger/discovery.py`; the first healthy
+`/health` with `version == 3` is saved and used by every screen and by the live
+gateway client. No manual URL or emulator-only default is required.
 
 ## Users, addressing and the dashboard feed
 
@@ -91,10 +105,10 @@ no BitChat wire compatibility, no copied code.
 
 ## Device checks (pending)
 
-- Two phones on one Wi-Fi LAN: start Relay in `AUTO`, confirm Wi-Fi peer count
-  rises and chat arrives.
-- Two phones with Bluetooth only: turn off Wi-Fi, confirm the active link moves
-  to Bluetooth and waiting chat flushes.
-- Both radios present: confirm only one link is active and no duplicate chat is
-  delivered.
-- Pull `adb logcat -s AgriChain` and quote it here before marking any D-check done.
+- Two phones on one Wi-Fi LAN: start the relay and confirm Wi-Fi peers appear.
+- Two phones with Bluetooth only: confirm BLE peers appear and messages flow.
+- Both radios present: confirm both transports appear in the relay snapshot and
+  that one `msgId` arriving on both is not relayed twice.
+- With the ledger running: confirm the app finds the host without a manual URL
+  and that gateway receipts reach phones over both meshes.
+- Pull `adb logcat -s AgriMesh` and quote it here before marking any D-check done.

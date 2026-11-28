@@ -45,7 +45,11 @@ object LedgerDiscovery {
             connection.connectTimeout = timeoutMs
             connection.readTimeout = timeoutMs
             connection.setRequestProperty("Accept", "application/json")
-            connection.responseCode == 200
+            if (connection.responseCode != 200) return false
+            // Any HTTP 200 is not a ledger: require the v3 health payload.
+            val body = connection.inputStream?.bufferedReader()?.use { it.readText() } ?: return false
+            val json = runCatching { JSONObject(body) }.getOrNull() ?: return false
+            json.optInt("version", -1) == 3
         } catch (error: IOException) {
             false
         } finally {

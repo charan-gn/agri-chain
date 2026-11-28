@@ -90,13 +90,43 @@ function renderFeed(name, data) {
   }
 }
 
+async function loadMandi() {
+  const meta = document.getElementById('mandiMeta');
+  const body = document.getElementById('mandiBody');
+  try {
+    const data = await api('/api/mandi');
+    const rows = (data.quotes || []).map((item) => [
+      item.commodity || '—',
+      item.market || '—',
+      item.date || data.observedDate || '—',
+      money(item.modalPaisePerKg),
+      `${money(item.minPaisePerKg)} / ${money(item.maxPaisePerKg)}`,
+      item.source || data.source || '—'
+    ]);
+    body.innerHTML = table(
+      [['Crop', 'crop'], ['Market', 'market'], ['Date', 'date'],
+       ['Modal', 'modalPaisePerKg'], ['Min / Max', 'min-max'], ['Source', 'source']],
+      rows
+    );
+    const parts = [`Source: ${esc(data.source || 'unknown')}`];
+    if (data.observedDate) parts.push(`observed ${esc(data.observedDate)}`);
+    parts.push(esc(data.disclaimer || 'Advisory reference data.'));
+    if (data.error) parts.push(esc(data.error));
+    meta.innerHTML = parts.join(' · ');
+  } catch (error) {
+    meta.textContent = 'Mandi reference unavailable.';
+    body.innerHTML = `<p class="error">${esc(error.message)}</p>`;
+  }
+}
+
 async function refresh() {
   const feed = document.getElementById('feed');
   try {
     const [info, stats, data] = await Promise.all([
       api('/api/ledger'),
       api('/api/stats'),
-      api(`/api/${currentFeed}`)
+      api(`/api/${currentFeed}`),
+      loadMandi()
     ]);
     dictionary = { crops: info.crops || [], regions: info.regions || [] };
     document.getElementById('ledger').textContent = `ledger ${shortId(info.ledgerId)} · seq ${stats.messages}`;
@@ -117,5 +147,6 @@ document.querySelectorAll('.tab').forEach((button) => {
 });
 
 document.getElementById('refresh').addEventListener('click', refresh);
+document.getElementById('mandiRefresh').addEventListener('click', loadMandi);
 refresh();
 window.setInterval(refresh, 15000);

@@ -26,17 +26,24 @@
                 android:contentDescription="Back"
                 android:src="@drawable/ic_back" />
 
+            <ImageView
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:layout_marginStart="12dp"
+                android:contentDescription="Add a harvest"
+                android:src="@drawable/ill_farmer" />
+
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
+                android:layout_marginStart="10dp"
                 android:layout_weight="1"
                 android:orientation="vertical">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Crop batch"
+                    android:text="Add a Harvest"
                     android:textColor="@color/text_primary"
                     android:textSize="22sp"
                     android:textStyle="bold" />
@@ -44,7 +51,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="BATCH_REGISTER and BIND are signed offline"
+                    android:text="Register a crop and connect its box — saved offline"
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp" />
             </LinearLayout>
@@ -58,15 +65,12 @@
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            app:cardBackgroundColor="@color/surface_card"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="1dp"
-            app:strokeColor="@color/border_warm"
-            app:strokeWidth="1.5dp">
+            android:background="@drawable/bg_card"
+            android:orientation="vertical">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -142,7 +146,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="48dp" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/registerButton"
@@ -156,20 +160,17 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="Authorize a transport box"
+            android:text="Connect a transport box"
             android:textColor="@color/text_primary"
             android:textSize="16sp"
             android:textStyle="bold" />
 
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            app:cardBackgroundColor="@color/surface_card"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="1dp"
-            app:strokeColor="@color/border_warm"
-            app:strokeWidth="1.5dp">
+            android:background="@drawable/bg_card"
+            android:orientation="vertical">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -208,7 +209,7 @@
                     android:hint="box actor id"
                     android:inputType="text" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/bindButton"
@@ -226,6 +227,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/qrButton"
+                style="@style/AgriButton.Outline"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
@@ -233,6 +235,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/marketButton"
+                style="@style/AgriButton.Secondary"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
@@ -244,7 +247,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="My batches"
+            android:text="My Harvests"
             android:textColor="@color/text_primary"
             android:textSize="16sp"
             android:textStyle="bold" />

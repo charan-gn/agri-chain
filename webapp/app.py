@@ -22,6 +22,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+try:  # supports both `uvicorn app:app` and `webapp.app` imports
+    from . import mandi
+except ImportError:  # pragma: no cover - top-level module inside webapp/
+    import mandi  # type: ignore[no-redef]
+
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 LEDGER_URL = os.environ.get("LEDGER_URL", "http://127.0.0.1:8000").rstrip("/")
@@ -141,6 +146,17 @@ def trades(region: int | None = None, crop: str | None = None, actor: str | None
 @app.get("/api/prices")
 def prices(region: int | None = None, sinceVersion: int | None = None) -> Any:
     return _feed("prices", region=region, sinceVersion=sinceVersion)
+
+
+@app.get("/api/mandi")
+def mandi_quotes(
+    state: str | None = None,
+    market: str | None = None,
+    crop: str | None = None,
+    limit: int = 50,
+) -> dict:
+    """Advisory reference prices; independent of the signed v3 price feed."""
+    return mandi.quotes(state=state, market=market, crop=crop, limit=limit)
 
 
 @app.get("/api/actors/{actor_id}")

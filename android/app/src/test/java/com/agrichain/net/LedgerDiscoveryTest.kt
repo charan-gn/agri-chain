@@ -50,9 +50,9 @@ class LedgerDiscoveryTest {
     }
 
     @Test
-    fun probeHitsHealthAndAccepts200() {
+    fun probeHitsHealthAndAcceptsV3() {
         val paths = mutableListOf<String>()
-        val (thread, port) = serveOnce(200, """{"ok":true}""") { paths += it }
+        val (thread, port) = serveOnce(200, """{"ok":true,"version":3}""") { paths += it }
         try {
             assertTrue(LedgerDiscovery.probe("http://127.0.0.1:$port", timeoutMs = 2_000))
         } finally {
@@ -60,6 +60,23 @@ class LedgerDiscoveryTest {
         }
         assertEquals(1, paths.size)
         assertTrue(paths.single(), paths.single().startsWith("GET /health "))
+    }
+
+    @Test
+    fun probeRejectsHealthy200FromNonV3OrNonJsonServices() {
+        val wrongVersion = serveOnce(200, """{"ok":true,"version":2}""") { }
+        try {
+            assertFalse(LedgerDiscovery.probe("http://127.0.0.1:${wrongVersion.second}", timeoutMs = 2_000))
+        } finally {
+            wrongVersion.first.join(2_000)
+        }
+
+        val notJson = serveOnce(200, "ok") { }
+        try {
+            assertFalse(LedgerDiscovery.probe("http://127.0.0.1:${notJson.second}", timeoutMs = 2_000))
+        } finally {
+            notJson.first.join(2_000)
+        }
     }
 
     @Test

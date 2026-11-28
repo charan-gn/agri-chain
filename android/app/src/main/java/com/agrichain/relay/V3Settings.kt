@@ -58,8 +58,12 @@ class V3Settings(context: Context) {
         get() = prefs.getBoolean(KEY_SMS_GATEWAY_MODE, false)
         set(value) = prefs.edit().putBoolean(KEY_SMS_GATEWAY_MODE, value).apply()
 
+    /**
+     * BLE is always on alongside Wi-Fi. The stored value is kept only for
+     * compatibility with older builds and saved settings screens.
+     */
     var bleEnabled: Boolean
-        get() = prefs.getBoolean(KEY_BLE_ENABLED, true)
+        get() = true
         set(value) = prefs.edit().putBoolean(KEY_BLE_ENABLED, value).apply()
 
     var loraEnabled: Boolean
@@ -71,7 +75,7 @@ class V3Settings(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_REGISTERED, value).apply()
 
     var caps: Int
-        get() = prefs.getInt(KEY_CAPS, CAP_WIFI or CAP_GATEWAY)
+        get() = prefs.getInt(KEY_CAPS, CAP_WIFI or CAP_BLE or CAP_GATEWAY) or CAP_WIFI or CAP_BLE
         set(value) = prefs.edit().putInt(KEY_CAPS, value).apply()
 
     fun baseUrl(context: Context): String = LedgerSettings.baseUrl(context)

@@ -55,10 +55,11 @@ for permission in \
   "${adb[@]}" shell pm grant "$PKG" "android.permission.$permission" >/dev/null 2>&1 || true
 done
 
-"${adb[@]}" shell am start -n "$PKG/.MainActivity" \
-  --es ledgerUrl "http://127.0.0.1:$PORT" >/dev/null
+"${adb[@]}" shell am start -n "$PKG/.MainActivity" >/dev/null
 
 echo "Installed $PKG on $device"
 echo "USB ledger: http://127.0.0.1:$PORT (adb reverse active)"
-echo "In the app: tap Auto-detect ledger (or Ledger sync -> Use USB), then Register actors."
+echo "Ledger discovery is automatic: the app probes the saved host, USB loopback,"
+echo "the emulator host and UDP/LAN replies, then saves the reachable server."
+echo "In the app: Register actors if this is a new phone."
 echo "Dashboard:  http://localhost:$PORT/"

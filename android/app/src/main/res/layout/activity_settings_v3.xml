@@ -223,7 +223,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="Bluetooth LE mesh" />
+                    android:text="Bluetooth LE mesh (always on with Wi-Fi)" />
 
                 <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/loraSwitch"

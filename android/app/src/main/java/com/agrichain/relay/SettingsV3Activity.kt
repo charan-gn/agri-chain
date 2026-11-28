@@ -51,7 +51,10 @@ class SettingsV3Activity : AppCompatActivity() {
         binding.smsSwitch.isChecked = settings.smsEnabled
         binding.smsGatewayInput.setText(settings.smsGateway)
         binding.smsGatewaySwitch.isChecked = settings.smsGatewayMode
-        binding.bleSwitch.isChecked = settings.bleEnabled
+        // Wi-Fi and BLE mesh always run together; keep the switch visible for
+        // compatibility but make the always-on state explicit in the UI.
+        binding.bleSwitch.isChecked = true
+        binding.bleSwitch.isEnabled = false
         binding.loraSwitch.isChecked = settings.loraEnabled
         binding.roleSpinner.setSelection(
             listOf("farmer", "buyer", "box", "gateway").indexOf(settings.role).coerceAtLeast(0),
@@ -83,12 +86,11 @@ class SettingsV3Activity : AppCompatActivity() {
             settings.smsEnabled = binding.smsSwitch.isChecked
             settings.smsGateway = binding.smsGatewayInput.text.toString()
             settings.smsGatewayMode = binding.smsGatewaySwitch.isChecked
-            settings.bleEnabled = binding.bleSwitch.isChecked
+            settings.bleEnabled = true
             settings.loraEnabled = binding.loraSwitch.isChecked
-            settings.caps = V3Settings.CAP_WIFI or
+            settings.caps = V3Settings.CAP_WIFI or V3Settings.CAP_BLE or
                 (if (settings.gatewayEnabled) V3Settings.CAP_GATEWAY else 0) or
                 (if (settings.smsEnabled || settings.smsGatewayMode) V3Settings.CAP_SMS else 0) or
-                (if (settings.bleEnabled) V3Settings.CAP_BLE else 0) or
                 (if (settings.loraEnabled) V3Settings.CAP_LORA else 0)
             binding.statusText.text = "Saved"
             if (restart && RelayRuntime.status.value == "running") {

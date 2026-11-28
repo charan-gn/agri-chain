@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.agrichain.net.LedgerDiscovery
+import com.agrichain.net.LedgerSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,6 +77,22 @@ object RelayRuntime {
         val settings = V3Settings(appContext)
         _status.value = "starting"
 
+        // Discovery is blocking (saved -> USB -> emulator -> LAN UDP) and this
+        // runs on RelayService's worker thread, never on the UI thread. Pinning
+        // the key and every screen must use the host we actually found.
+        val detected = runCatching {
+            LedgerDiscovery.discover(appContext) { message -> Log.i(TAG, message) }
+        }.onFailure { error ->
+            Log.w(TAG, "relay: ledger discovery failed: ${error.message}")
+        }.getOrNull()
+        if (detected != null) {
+            runCatching { LedgerSettings.setBaseUrl(appContext, detected) }
+                .onFailure { error -> Log.w(TAG, "relay: ledger save failed: ${error.message}") }
+            Log.i(TAG, "relay: ledger auto-detected $detected")
+        } else {
+            Log.w(TAG, "relay: ledger auto-detect found nothing; using stored host")
+        }
+
         val baseUrl = settings.baseUrl(appContext)
         val pin = settings.ledgerPubkey ?: runCatching {
             settings.fetchAndPinLedgerKey(appContext)
@@ -93,10 +111,9 @@ object RelayRuntime {
         }
         identity = signer
 
-        val caps = settings.caps or
+        val caps = settings.caps or V3Settings.CAP_BLE or
             (if (settings.gatewayEnabled) V3Settings.CAP_GATEWAY else 0) or
             (if (settings.smsEnabled || settings.smsGatewayMode) V3Settings.CAP_SMS else 0) or
-            (if (settings.bleEnabled) V3Settings.CAP_BLE else 0) or
             (if (settings.loraEnabled) V3Settings.CAP_LORA else 0)
         val config = RelayConfig(
             nick = settings.nick.ifBlank { "phone" },
@@ -142,13 +159,12 @@ object RelayRuntime {
             sms = smsTransport
         }
 
-        if (settings.bleEnabled) {
-            val bleTransport = BleTransport(appContext, signer.actorId) {
-                V3Settings(appContext).bleEnabled
-            }
-            relay.attach(bleTransport)
-            ble = bleTransport
+        // BLE is always attached next to Wi-Fi; RelayCore fans out through both.
+        val bleTransport = BleTransport(appContext, signer.actorId) {
+            V3Settings(appContext).bleEnabled
         }
+        relay.attach(bleTransport)
+        ble = bleTransport
 
         if (settings.loraEnabled) {
             val loraTransport = LoRaTransport(appContext, scope) {
@@ -158,12 +174,21 @@ object RelayRuntime {
             lora = loraTransport
         }
 
+        Log.i(
+            TAG,
+            "relay: Wi-Fi mesh and BLE mesh are both attached; " +
+                "transports=${relay.snapshot().transports.map { it.id }}",
+        )
+
         jobs += scope.launch {
             runCatching { relay.start() }
                 .onFailure { Log.e(TAG, "relay: transport start failed: ${it.message}") }
         }
         jobs += scope.launch { tickLoop(relay) }
-        jobs += scope.launch { gatewayLoop(relay, baseUrl) }
+        val client = HttpV3LedgerClient(baseUrl)
+        gatewayClient = client
+        jobs += scope.launch { gatewayLoop(relay, client) }
+        jobs += scope.launch { ledgerDiscoveryLoop(appContext, client) }
         jobs += scope.launch { eventLoop(relay) }
 
         _status.value = "running"
@@ -264,11 +289,34 @@ object RelayRuntime {
         }
     }
 
-    private suspend fun gatewayLoop(relay: RelayCore, baseUrl: String) {
-        val client = HttpV3LedgerClient(baseUrl)
-        gatewayClient = client
+    private suspend fun gatewayLoop(relay: RelayCore, client: V3LedgerClient) {
         runCatching { GatewayLoop(relay, client).run() }
             .onFailure { Log.w(TAG, "relay: gateway loop stopped: ${it.message}") }
+    }
+
+    /**
+     * Keep the ledger host fresh without restarting the relay. The same HTTP
+     * client is reused; only its base URL changes, so GatewayLoop keeps its
+     * retry cadence while radios stay independent of the gateway.
+     */
+    private suspend fun ledgerDiscoveryLoop(context: Context, client: HttpV3LedgerClient) {
+        while (true) {
+            delay(25_000L)
+            val found = runCatching {
+                LedgerDiscovery.discover(context) { message -> Log.i(TAG, message) }
+            }.onFailure { error ->
+                Log.w(TAG, "relay: ledger re-discovery failed: ${error.message}")
+            }.getOrNull() ?: continue
+            val previous = client.baseUrl()
+            if (found == previous) continue
+            val saved = runCatching { LedgerSettings.setBaseUrl(context, found) }
+            if (saved.isFailure) {
+                Log.w(TAG, "relay: ledger save failed: ${saved.exceptionOrNull()?.message}")
+                continue
+            }
+            client.setBaseUrl(found)
+            Log.i(TAG, "relay: ledger auto-detected $found (was $previous)")
+        }
     }
 
     private suspend fun eventLoop(relay: RelayCore) {

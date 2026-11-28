@@ -29,6 +29,10 @@ def test_config_and_static_pages() -> None:
     assert 'class="kpis"' in html
     for feed in ("messages", "listings", "orders", "trades", "prices"):
         assert f'data-feed="{feed}"' in html
+    assert "mandiMeta" in html
+    assert "mandiBody" in html
+    assert "mandiRefresh" in html
+    assert "advisory" in html
     assert client.get("/assets/app.js").status_code == 200
 
 

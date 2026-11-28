@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from discovery import start_discovery
 from v3_api import install_v3
 
 DEFAULT_DB = Path(__file__).resolve().parent / "ledger.db"
@@ -108,6 +109,18 @@ def create_app(
     @app.get("/health", include_in_schema=False)
     def health() -> dict:
         return {"ok": True, "version": 3}
+
+    responder = None
+
+    @app.on_event("startup")
+    def start_ledger_discovery() -> None:
+        nonlocal responder
+        responder = start_discovery(http_port())
+
+    @app.on_event("shutdown")
+    def stop_ledger_discovery() -> None:
+        if responder is not None:
+            responder.stop()
 
     database = db_path or os.environ.get("LEDGER_DB", str(DEFAULT_DB))
     install_v3(app, db_path=database, key_path=v3_key_path, require_admin=require_admin)

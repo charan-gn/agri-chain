@@ -16,7 +16,15 @@ class HttpV3LedgerClient(
     baseUrl: String,
     private val timeoutMs: Int = 12_000,
 ) : V3LedgerClient {
-    private val base = baseUrl.trimEnd('/')
+    @Volatile
+    private var base: String = baseUrl.trim().trimEnd('/')
+
+    /** Swap a stale ledger host without recreating the client or GatewayLoop. */
+    fun setBaseUrl(value: String) {
+        synchronized(this) { base = value.trim().trimEnd('/') }
+    }
+
+    fun baseUrl(): String = synchronized(this) { base }
 
     override suspend fun postMessages(via: String, messages: List<ByteArray>): List<LedgerIngestResult> {
         val payload = JSONObject()
@@ -130,7 +138,7 @@ class HttpV3LedgerClient(
     private fun post(path: String, payload: JSONObject): JSONObject = request("POST", path, payload)
 
     private fun request(method: String, path: String, payload: JSONObject?): JSONObject {
-        val connection = URI(base + path).toURL().openConnection() as HttpURLConnection
+        val connection = URI(baseUrl() + path).toURL().openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method
             connection.connectTimeout = timeoutMs

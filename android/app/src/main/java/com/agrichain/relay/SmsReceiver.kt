@@ -63,7 +63,9 @@ class SmsReceiver : BroadcastReceiver() {
             )
             return
         }
-        if (RelayRuntime.core == null) RelayRuntime.start(context)
+        // RelayRuntime.start() now probes the ledger synchronously; let the
+        // foreground service do that work instead of blocking the receiver.
+        if (RelayRuntime.core == null) RelayRuntime.startService(context)
         val outcome = kotlinx.coroutines.runBlocking {
             RelayRuntime.onSmsEnvelope(envelope, address)
         }

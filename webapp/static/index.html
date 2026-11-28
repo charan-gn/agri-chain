@@ -33,6 +33,16 @@
   <main>
     <section id="stats" class="kpis" aria-label="Ledger statistics"></section>
 
+    <section class="panel mandi-panel" aria-label="Mandi reference prices">
+      <div class="panel-head">
+        <h2>Mandi reference (advisory)</h2>
+        <button id="mandiRefresh" class="btn btn-ghost btn-small" type="button">Refresh</button>
+      </div>
+      <p id="mandiMeta" class="muted mandi-meta">Loading reference market prices…</p>
+      <div id="mandiBody" class="table-wrap mandi-body"></div>
+      <p class="muted mandi-note">Data: <a href="https://agmarknet.gov.in/" target="_blank" rel="noopener">Agmarknet</a> via data.gov.in. Signed v3 prices remain on the Prices tab.</p>
+    </section>
+
     <div class="dashboard-grid">
       <section class="panel feed-panel">
         <div class="panel-head">
