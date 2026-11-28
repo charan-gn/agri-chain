@@ -19,8 +19,16 @@ def test_config_and_static_pages() -> None:
     assert response.json()["version"] == 3
     assert response.json()["ledgerUrl"].startswith("http")
 
-    assert "AgriChain" in client.get("/").text
+    html = client.get("/").text
+    assert "AgriChain" in html
     assert "v3 explorer" in client.get("/explorer").text
+
+    # T41: the viewer keeps every v3 feed but wears the v2 dashboard shell.
+    assert "Offline-first produce ledger" in html
+    assert 'class="topbar"' in html
+    assert 'class="kpis"' in html
+    for feed in ("messages", "listings", "orders", "trades", "prices"):
+        assert f'data-feed="{feed}"' in html
     assert client.get("/assets/app.js").status_code == 200
 
 

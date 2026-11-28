@@ -52,6 +52,7 @@ Audit round 2 reuses IDs T15-T24; the pre-audit T15/T16 work (laptop runner, aut
 | T38 | P9 port batch/box/barter; remove /events + mesh/ | done | charan | task-T38-v3-port | APP/relay/, APP/qr/, APP/MainActivity.kt, AndroidManifest.xml, layouts, tests, ledger/, webapp/, contracts/, README.md | T31, T32, T34-T37 |
 | T39 | P10 custodial SMS agent (stretch) | done | charan | task-T35-sms | gateway/, README.md | T35 |
 | T40 | P11 hardening + demo | claimed | charan | task-T38-v3-port | tools/soak.py, README.md | all v3 |
+| T41 | Web viewer v2 dashboard shell (keep v3 feeds) | done | charan | task-T41-webapp-v2-look | webapp/static/index.html, webapp/static/styles.css, webapp/tests/test_webapp.py, README.md | T38 |
 
 ## Contracts
 
@@ -141,6 +142,8 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - [2026-11-27 18:25] FROM charan → all: T40 hardening started on task-T35-sms: fixed the outbox regression where a recipient's later activity hid ORDER_RECEIVED/DELIVERED notices, added a `/v3` per-IP rate-limit middleware, and migrated the web viewer. Soak/demo runbook work remains, so T40 stays claimed. Evidence: `pytest ledger/tests gateway/tests -q` **66 passed**, `pytest webapp/tests -q` **5 passed**. | done
 - [2026-11-27 19:15] FROM charan → all: T38 done on task-T38-v3-port. Batch/box/barter screens now originate v3 `BATCH_REGISTER`, `BIND`, `TAMPER_ALERT`, `BARTER_OFFER` and `BARTER_ACCEPT` through `RelayRuntime`; the v2 `mesh/`, `batch/`, `barter/`, `buyer/`, `data/`, `prices/` and old box screens/tests are deleted. `BatchQrCodec` still parses legacy UUIDv4 labels beside 24-hex v3 ids. Evidence: `pytest ledger/tests gateway/tests webapp/tests -q` **71 passed**, `python tools/e2e.py` **PASS (11 checks)**, Android `testDebugUnitTest` compiled and ran **56 tests with one known failure** (`LoRaBleCodecTest.bleChunksRoundTripAtSeveralMtuSizes`: oversize ANNOUNCE body). `assembleDebug` not claimed. `adb devices -l` showed only `List of devices attached`, so no radio/device claim. | done
 - [2026-11-27 19:20] FROM charan → all: T40 hardening continues on task-T38-v3-port. Added `tools/soak.py`: signed LISTING/TAMPER/ORDER/ACCEPT/DELIVERED/BARTER traffic, checkpoint and outbox signature verification, JSON report. In-process smoke (`--minutes 0.2 --interval 1`) **PASS**: 10 cycles, 28 messages accepted, 0 rejected, checkpoint seq 33. The 1-hour live soak, OEM battery rehearsal and two-phone radio checks remain pending, so T40 stays claimed. | open
+- [2026-11-28 12:00] FROM charan → all: T41 claimed on task-T41-webapp-v2-look. Restoring the v2 public-dashboard shell (topbar, KPI cards, panels) around the existing v3 explorer; no API, contract or feed logic changes. | done
+- [2026-11-28 12:20] FROM charan → all: T41 done. `webapp/static/index.html` and `styles.css` now use the v2 cream/green dashboard layout while `app.js` and every `/api` v3 proxy stay untouched. Messages/Listings/Orders/Trades/Prices tabs, refresh, auto-refresh, ledger status and `/explorer` link all remain. Evidence: `webapp` pytest **5 passed**. | done
 
 ## Decisions log
 
@@ -202,6 +205,7 @@ Append only. `[date time] FROM name → TO name/all: message | open / done`
 - 2026-11-27 charan: the v2 ledger API is removed rather than aliased. `ledger/app.py` now only installs `/v3`, `/health` and `/explorer`, with a per-IP `/v3` rate limit; old v2 modules, tests and contract-v2 artifacts are deleted.
 - 2026-11-27 charan: T38 ports batch/box/barter onto v3 client-signed messages. `BATCH_REGISTER`/`BIND` come from `BatchV3Activity`, `TAMPER_ALERT` from `BoxRuntimeV3`, and `BARTER_OFFER`/`BARTER_ACCEPT` from `BarterV3Activity`; all call `RelayRuntime.originate`, so they queue offline and drain over Wi-Fi/BLE/SMS/LoRa. GPS fixes stay local on the phone; only the last fix is carried in `TAMPER_ALERT`, and no v3 GPS wire message is added. The v2 packages and their tests are deleted; `BatchQrCodec` accepts both 24-hex v3 ids and legacy UUIDv4 labels under `agri://batch/`.
 - 2026-11-27 charan: T40 uses `tools/soak.py` for repeatable signed traffic. A one-hour live run is the acceptance soak; `--in-process --minutes 0.1` is only a smoke test. The script never logs private keys and writes a JSON report for evidence. No radio or phone claim is made without quoted `adb devices`/`logcat` output.
+- 2026-11-28 charan: T41 is a presentation-only revert. The public viewer keeps the v3 `/api` proxies, all five feed tabs, the ledger status, auto-refresh and `/explorer` link; only `index.html` and `styles.css` adopt the v2 dashboard shell. No contract or wire-format change.
 
 ## Blockers
 

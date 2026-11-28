@@ -4,37 +4,63 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AgriChain v3 explorer</title>
+  <meta name="description" content="AgriChain v3 explorer in the v2 dashboard shell.">
   <link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body>
-  <header>
-    <div>
-      <h1>AgriChain v3</h1>
-      <p>Ledger-ordered messages from phones, SMS, LoRa and BLE gateways.</p>
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">AC</div>
+      <div>
+        <h1>AgriChain</h1>
+        <p>Offline-first produce ledger</p>
+      </div>
     </div>
-    <div class="actions">
+    <nav class="tabs" aria-label="Views">
+      <button class="tab active" data-feed="messages" type="button">Messages</button>
+      <button class="tab" data-feed="listings" type="button">Listings</button>
+      <button class="tab" data-feed="orders" type="button">Orders</button>
+      <button class="tab" data-feed="trades" type="button">Trades</button>
+      <button class="tab" data-feed="prices" type="button">Prices</button>
+    </nav>
+    <div class="status">
+      <span id="ledger-dot" class="dot" aria-hidden="true"></span>
       <span id="ledger" class="pill">connecting…</span>
-      <button id="refresh" type="button">Refresh</button>
+      <button id="refresh" class="btn btn-ghost" type="button">Refresh</button>
     </div>
   </header>
 
   <main>
-    <section id="stats" class="stats" aria-label="Ledger statistics"></section>
-    <section class="panel">
-      <div class="tabs" role="tablist">
-        <button class="tab active" data-feed="messages" type="button">Messages</button>
-        <button class="tab" data-feed="listings" type="button">Listings</button>
-        <button class="tab" data-feed="orders" type="button">Orders</button>
-        <button class="tab" data-feed="trades" type="button">Trades</button>
-        <button class="tab" data-feed="prices" type="button">Prices</button>
-      </div>
-      <div id="feed" class="feed">Loading…</div>
-    </section>
-    <footer>
-      <span>Independent client signatures; the ledger assigns seq and signs receipts.</span>
-      <a href="/explorer">Ledger explorer ↗</a>
-    </footer>
+    <section id="stats" class="kpis" aria-label="Ledger statistics"></section>
+
+    <div class="dashboard-grid">
+      <section class="panel feed-panel">
+        <div class="panel-head">
+          <h2>Ledger activity</h2>
+          <span class="muted">v3 explorer · auto-refresh 15s</span>
+        </div>
+        <div id="feed" class="table-wrap">Loading…</div>
+      </section>
+
+      <aside class="side">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Ledger</h2>
+            <span class="muted">v3</span>
+          </div>
+          <p class="muted">Signed messages are ordered by the ledger. All five feeds stay available above.</p>
+          <p><a class="btn btn-ghost" href="/explorer">v3 explorer ↗</a></p>
+        </section>
+      </aside>
+    </div>
   </main>
+
+  <footer>
+    <span>AgriChain demo</span>
+    <span>Independent client signatures; the ledger assigns seq and signs receipts.</span>
+    <a href="/explorer">v3 explorer ↗</a>
+  </footer>
+
   <script src="/assets/app.js"></script>
 </body>
 </html>
