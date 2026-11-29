@@ -68,6 +68,19 @@ def _decode_pubkey(value: Any) -> bytes:
     return raw
 
 
+def _actor_filter(value: str | None) -> str | None:
+    if value is None or not value.strip():
+        return None
+    text = value.strip().lower()
+    if len(text) != 16:
+        raise _bad("actor must be a 16-character actor id")
+    try:
+        bytes.fromhex(text)
+    except ValueError:
+        raise _bad("actor must be hex")
+    return text
+
+
 def _format_time(ts: int) -> str:
     try:
         return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%H:%M:%S")
@@ -220,6 +233,8 @@ footer {{ margin-top: 12px; font-size: 12px; color: #5d6b5a; }}
 <a href="/v3/messages?limit=50">JSON log</a>
 <a href="/v3/prices">prices</a>
 <a href="/v3/listings">listings</a>
+<a href="/v3/orders">orders</a>
+<a href="/v3/trades">trades</a>
 <a href="/v3/checkpoint">checkpoint</a>
 <a href="/v3/ledger">ledger</a>
 </header>
@@ -458,6 +473,53 @@ def install_v3(
         if region is not None and not v3c.known_region(region):
             raise _bad(f"unknown region {region}")
         return ledger.listings(region, afterSeq)
+
+    @app.get("/v3/orders")
+    def v3_orders(
+        region: int | None = Query(default=None),
+        crop: int | None = Query(default=None),
+        status: str | None = Query(default=None),
+        actor: str | None = Query(default=None),
+        afterSeq: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=200),
+    ) -> dict:
+        if region is not None and not v3c.known_region(region):
+            raise _bad(f"unknown region {region}")
+        if crop is not None and not v3c.known_crop(crop):
+            raise _bad(f"unknown crop {crop}")
+        order_status = None
+        if status and status.lower() not in {"all", "*"}:
+            order_status = status.strip().lower()
+            if order_status not in {"open", "accepted", "delivered", "cancelled"}:
+                raise _bad(f"unknown order status {status!r}")
+        return ledger.orders(
+            region=region,
+            crop=crop,
+            status=order_status,
+            actor=_actor_filter(actor),
+            after_seq=afterSeq,
+            limit=limit,
+        )
+
+    @app.get("/v3/trades")
+    def v3_trades(
+        region: int | None = Query(default=None),
+        crop: int | None = Query(default=None),
+        actor: str | None = Query(default=None),
+        afterSeq: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=200),
+    ) -> dict:
+        if region is not None and not v3c.known_region(region):
+            raise _bad(f"unknown region {region}")
+        if crop is not None and not v3c.known_crop(crop):
+            raise _bad(f"unknown crop {crop}")
+        return ledger.trades(
+            region=region,
+            crop=crop,
+            actor=_actor_filter(actor),
+            after_seq=afterSeq,
+            limit=limit,
+        )
 
     @app.post("/v3/outbox/pull")
     def v3_outbox_pull(payload: dict = Body(...)) -> dict:

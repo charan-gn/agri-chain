@@ -739,6 +739,73 @@ class V3Db:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_orders(
+        self,
+        *,
+        region: int | None = None,
+        crop: int | None = None,
+        status: str | None = None,
+        actor: str | None = None,
+        after_seq: int = 0,
+        limit: int = 100,
+    ) -> list[dict]:
+        clauses = ["o.created_seq > ?"]
+        params: list[object] = [int(after_seq)]
+        if region is not None:
+            clauses.append("l.region = ?")
+            params.append(int(region))
+        if crop is not None:
+            clauses.append("l.crop = ?")
+            params.append(int(crop))
+        if status:
+            clauses.append("o.status = ?")
+            params.append(status)
+        if actor:
+            clauses.append("(o.buyer_id = ? OR o.seller_id = ?)")
+            params.extend([actor, actor])
+        params.append(max(1, min(int(limit), 500)))
+        with self.connection() as conn:
+            rows = conn.execute(
+                """SELECT o.*, l.crop AS crop, l.region AS region, l.grade AS grade
+                   FROM v3_orders o
+                   LEFT JOIN v3_listings l ON l.listing_id = o.listing_id
+                   WHERE """
+                + " AND ".join(clauses)
+                + " ORDER BY o.created_seq ASC LIMIT ?",
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_trades(
+        self,
+        *,
+        region: int | None = None,
+        crop: int | None = None,
+        actor: str | None = None,
+        after_seq: int = 0,
+        limit: int = 100,
+    ) -> list[dict]:
+        clauses = ["seq > ?"]
+        params: list[object] = [int(after_seq)]
+        if region is not None:
+            clauses.append("region = ?")
+            params.append(int(region))
+        if crop is not None:
+            clauses.append("crop = ?")
+            params.append(int(crop))
+        if actor:
+            clauses.append("(seller_id = ? OR buyer_id = ?)")
+            params.extend([actor, actor])
+        params.append(max(1, min(int(limit), 500)))
+        with self.connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM v3_trades WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY seq ASC LIMIT ?",
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def region_crops(self, region: int) -> set[int]:
         with self.connection() as conn:
             rows = conn.execute(

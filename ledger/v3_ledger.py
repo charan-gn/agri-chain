@@ -1629,6 +1629,92 @@ class V3Ledger:
             "nextAfterSeq": int(rows[-1]["created_seq"]) if rows else int(after_seq),
         }
 
+    def orders(
+        self,
+        *,
+        region: int | None = None,
+        crop: int | None = None,
+        status: str | None = None,
+        actor: str | None = None,
+        after_seq: int = 0,
+        limit: int = 100,
+    ) -> dict:
+        rows = self.db.list_orders(
+            region=region,
+            crop=crop,
+            status=status,
+            actor=actor,
+            after_seq=after_seq,
+            limit=limit,
+        )
+        names = v3c.contracts()["cropNames"]
+        out = []
+        for row in rows:
+            original = self.db.message_by_id(row["order_id"])
+            crop = row["crop"]
+            out.append(
+                {
+                    "orderId": row["order_id"],
+                    "listingId": row["listing_id"],
+                    "buyerId": row["buyer_id"],
+                    "sellerId": row["seller_id"],
+                    "crop": int(crop) if crop is not None else None,
+                    "cropName": names.get(int(crop), str(crop)) if crop is not None else None,
+                    "region": int(row["region"]) if row["region"] is not None else None,
+                    "qtyKg": int(row["qty_kg"]),
+                    "bidPaise": int(row["bid_paise"]),
+                    "validUntil": int(row["valid_until"]),
+                    "status": row["status"],
+                    "createdSeq": int(row["created_seq"]),
+                    "acceptedSeq": int(row["accepted_seq"]) if row["accepted_seq"] is not None else None,
+                    "deliveredSeq": int(row["delivered_seq"]) if row["delivered_seq"] is not None else None,
+                    "message": _b64(bytes(original["raw"])) if original else None,
+                }
+            )
+        return {
+            "orders": out,
+            "nextAfterSeq": int(rows[-1]["created_seq"]) if rows else int(after_seq),
+        }
+
+    def trades(
+        self,
+        *,
+        region: int | None = None,
+        crop: int | None = None,
+        actor: str | None = None,
+        after_seq: int = 0,
+        limit: int = 100,
+    ) -> dict:
+        rows = self.db.list_trades(
+            region=region,
+            crop=crop,
+            actor=actor,
+            after_seq=after_seq,
+            limit=limit,
+        )
+        names = v3c.contracts()["cropNames"]
+        out = [
+            {
+                "tradeId": row["trade_id"],
+                "orderId": row["order_id"],
+                "listingId": row["listing_id"],
+                "sellerId": row["seller_id"],
+                "buyerId": row["buyer_id"],
+                "crop": int(row["crop"]),
+                "cropName": names.get(int(row["crop"]), str(row["crop"])),
+                "region": int(row["region"]),
+                "qtyKg": int(row["qty_kg"]),
+                "pricePaise": int(row["price_paise"]),
+                "seq": int(row["seq"]),
+                "ts": int(row["ts"]),
+            }
+            for row in rows
+        ]
+        return {
+            "trades": out,
+            "nextAfterSeq": int(rows[-1]["seq"]) if rows else int(after_seq),
+        }
+
     def pull_outbox(self, actors: list[str], after_id: int) -> dict:
         now = self.now()
         rows = self.db.pull_outbox(actors, after_id, now)
